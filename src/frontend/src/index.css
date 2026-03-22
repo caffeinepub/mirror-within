@@ -1,0 +1,86 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,700;0,800;1,300;1,700&family=Figtree:wght@300;400;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 1.5rem;
+
+    /* Mirror Within dark palette — OKLCH conversions */
+    /* #140f12 */ --mw-bg: 0.128 0.018 345;
+    /* #20161b */ --mw-card: 0.162 0.022 345;
+    /* #38262e */ --mw-card-border: 0.26 0.028 345;
+    /* #2b2025 */ --mw-input-bg: 0.195 0.018 345;
+    /* #4a323c */ --mw-input-border: 0.3 0.035 345;
+    /* #fff7fa */ --mw-text-primary: 0.98 0.008 345;
+    /* #dbc8cf */ --mw-text-muted: 0.84 0.022 345;
+    /* #d9a6b7 */ --mw-accent: 0.76 0.065 345;
+    /* #fff0f5 */ --mw-question: 0.97 0.015 345;
+    /* #efc1d0 */ --mw-btn-primary-bg: 0.84 0.072 345;
+    /* #1d1418 */ --mw-btn-primary-text: 0.16 0.018 345;
+    /* #76515e */ --mw-btn-secondary-border: 0.43 0.055 345;
+    /* #f4d6df */ --mw-btn-secondary-text: 0.9 0.045 345;
+    /* #2a1e24 */ --mw-nav-bg: 0.19 0.022 345;
+    /* #f1d8df */ --mw-nav-text: 0.89 0.038 345;
+    /* #2b2025 */ --mw-insight-bg: 0.195 0.018 345;
+    /* #f8e8ee */ --mw-insight-text: 0.94 0.03 345;
+    /* #8d7d84 */ --mw-placeholder: 0.58 0.022 345;
+    /* #3d2932 */ --mw-entry-border: 0.24 0.032 345;
+    /* #b89ca7 */ --mw-smallprint: 0.7 0.032 345;
+    /* #cbb6bf */ --mw-saved-reason: 0.77 0.025 345;
+    /* #f6dae3 */ --mw-saved-date: 0.91 0.04 345;
+
+    /* shadcn tokens pointing to Mirror Within palette */
+    --background: var(--mw-bg);
+    --foreground: var(--mw-text-primary);
+    --card: var(--mw-card);
+    --card-foreground: var(--mw-text-primary);
+    --popover: var(--mw-card);
+    --popover-foreground: var(--mw-text-primary);
+    --primary: var(--mw-btn-primary-bg);
+    --primary-foreground: var(--mw-btn-primary-text);
+    --secondary: var(--mw-nav-bg);
+    --secondary-foreground: var(--mw-nav-text);
+    --muted: var(--mw-input-bg);
+    --muted-foreground: var(--mw-text-muted);
+    --accent: var(--mw-accent);
+    --accent-foreground: var(--mw-btn-primary-text);
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+    --border: var(--mw-card-border);
+    --input: var(--mw-input-bg);
+    --ring: var(--mw-btn-secondary-border);
+    --chart-1: 0.646 0.222 41.116;
+    --chart-2: 0.6 0.118 184.704;
+    --chart-3: 0.398 0.07 227.392;
+    --chart-4: 0.828 0.189 84.429;
+    --chart-5: 0.769 0.188 70.08;
+    --sidebar: var(--mw-card);
+    --sidebar-foreground: var(--mw-text-primary);
+    --sidebar-primary: var(--mw-btn-primary-bg);
+    --sidebar-primary-foreground: var(--mw-btn-primary-text);
+    --sidebar-accent: var(--mw-nav-bg);
+    --sidebar-accent-foreground: var(--mw-nav-text);
+    --sidebar-border: var(--mw-card-border);
+    --sidebar-ring: var(--mw-btn-secondary-border);
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Figtree", sans-serif;
+  }
+
+  textarea::placeholder,
+  input::placeholder {
+    color: oklch(var(--mw-placeholder));
+  }
+
+  textarea {
+    resize: vertical;
+  }
+}
