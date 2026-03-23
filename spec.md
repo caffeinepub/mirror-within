@@ -1,36 +1,36 @@
 # Mirror Within
 
 ## Current State
-Full-width multi-column layout with a large header, left content panel, and right sidebar. Each segment fills the viewport. Garden visualization sits in the sidebar. The design uses a `#120d10` dark background with pink/rose accent colors. Feedback is collected but not displayed anywhere in the UI.
+Full Book Journey flow with 5 steps, pattern detection via `basePatterns` (9 patterns using regex), `detectPatternIds`, `pickNextRoute`, and a persistent profile stored at `mw_profile_v1`. Step 5 (Recap) shows detected patterns with advice and adaptive next steps. All existing access codes, feedback viewer (Iamki-only), garden visualization, crisis detection, mic toggle, and conversational follow-ups are present.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Page-peel animation when transitioning between steps: `perspective(1200px) rotateY(-18deg) translateX(28px) scale(0.98)` → neutral on entry
-- Step indicator pill in topbar (e.g. "Welcome", "Entry Point", "Lens", "Reflection", "Pattern", "Recap", "Adaptive")
-- **Feedback viewer page**: A dedicated page inside the shell (accessible from the recap/end screen or a small icon in the topbar) that shows all saved feedback entries from localStorage (`mirror_within_feedback_v4`). Each entry shows the name, message, screen, and date. If no feedback exists, show a gentle empty state.
+- A **detailed entry analysis** function (`analyzeEntry`) that detects across 4 dimensions:
+  - **Emotions**: fear, anger, shame, sadness, rejection, control (via keyword lists)
+  - **Triggers**: family, relationship, work, selfImage, money, health
+  - **Beliefs**: abandonment, unworthiness, overResponsibility, mistrust, selfSilencing
+  - **Coping**: avoidance, caretaking, peoplePleasing, rumination, confrontation
+- **Auto-save** each completed chapter set to a new localStorage key `mirrorEntries` as structured objects: `{ id, storyName, entryPoint, lens, entry (last chapter response), emotions[], triggers[], beliefs[], coping[], timestamp }`
+- A **Pattern History panel** in Step 5 (below existing pattern analysis) that reads all saved entries from `mirrorEntries`, counts tag frequency across all entries, and shows:
+  - Saved entry count
+  - Top emotion trend (with frequency + label: "Major pattern" >= 5, "Recurring pattern" >= 3, "Emerging pattern" >= 2)
+  - Top trigger trend
+  - Top belief trend  
+  - Top coping trend
+- The detailed analysis for the CURRENT session should also show in Step 5: "Likely trigger area", "Possible core belief", "Coping style" cards in addition to existing pattern cards
 
 ### Modify
-- **Layout**: Replace full-width multi-column layout with a compact single centered shell card (max-width 520px, `border-radius: 28px`, `backdrop-filter: blur(14px)`, background `rgba(255,255,255,0.06)`, border `rgba(255,255,255,0.08)`)
-- **Background**: Use `linear-gradient(180deg, #0f0b14 0%, #17111f 45%, #21152a 100%)` instead of flat `#120d10`
-- **Topbar**: Small topbar inside the shell with brand label "Mirror" (uppercase, tracking) and the step pill on the right. Add a small feedback icon button (e.g. MessageSquare icon) in the topbar that navigates to the feedback viewer page.
-- **Pages**: Each step/segment renders as a "page" inside the shell; only the active page is visible; all use the peel-in animation on mount
-- **Garden**: Move garden into the shell as its own dedicated page/step shown after pattern analysis. Keep all garden symbols/milestones, render inline inside the card.
-- **Sidebar removed**: All content that was in the right sidebar folded into the main flow or removed. Garden stays as a dedicated page.
-- **Buttons**: Keep existing color scheme (primary = `#f3d8ff` / `#efc1d0`, secondary = translucent white border)
-- All existing feature logic (access codes, Book Journey segments 1-5, conversational follow-ups, mic toggle, crisis detection, adaptive routing, localStorage) is preserved exactly -- only the visual shell, layout, and feedback visibility change
+- Step 5 recap: after the existing pattern analysis section, insert the current-session detailed analysis cards, then the pattern history panel
 
 ### Remove
-- Right sidebar (current selections, "what this segment adds" panel)
-- Multi-column grid layout
-- Large header section at the top of the page
+- Nothing
 
 ## Implementation Plan
-1. Refactor the outer layout to a centered flex container with the compact shell card
-2. Update background to the gradient
-3. Add topbar with brand + step pill + feedback icon inside the shell
-4. Wrap each segment in a page div with the peel-in animation (framer-motion AnimatePresence + motion.div with perspective rotateY, or CSS keyframes)
-5. Move garden view into the shell as a dedicated step after recap
-6. Add feedback viewer page that reads from `mirror_within_feedback_v4` localStorage and renders all entries
-7. Remove sidebar markup entirely
-8. Keep all state, logic, storage keys, access codes, and flow unchanged
+1. Add `mirrorEntries` localStorage key constant
+2. Add `analyzeEntry(entry, lensKey, entryPoint, storyName)` function with 4 dictionaries
+3. Add `saveEntryToHistory(analysis)` function that reads, deduplicates by id, and writes to `mirrorEntries`
+4. Add `renderHistoryInsights(saved)` helper that counts tags and returns trend data
+5. In the Step 5 render: after `detectedPatterns` section, add a new `DetailedAnalysisPanel` showing current session's emotion/trigger/belief/coping findings
+6. Add `PatternHistoryPanel` component below that shows cross-session trends
+7. Auto-call `saveEntryToHistory` when step 5 is reached (at the same point profile is updated)

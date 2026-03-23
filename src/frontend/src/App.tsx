@@ -56,6 +56,7 @@ const DRAFT_KEY = "mirror_within_draft_v4";
 const SESSION_KEY = "mirror_within_session_v4";
 const FEEDBACK_KEY = "mirror_within_feedback_v4";
 const PROFILE_KEY = "mw_profile_v1";
+const ENTRIES_KEY = "mirrorEntries";
 const SESSION_TIMEOUT_MS = 1000 * 60 * 15;
 
 const allowedCodes: Record<string, string> = {
@@ -64,6 +65,7 @@ const allowedCodes: Record<string, string> = {
   Kayswt: "Kayden",
   FieldsD: "Garfield",
   Jade: "jaida",
+  CartyK: "CartyK",
   Iamki: "creator",
 };
 
@@ -474,6 +476,217 @@ function saveProfile(p: PatternProfile): void {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
   } catch {
     // ignore
+  }
+}
+
+// ─── Detailed Analysis ────────────────────────────────────────────────────────
+const analysisDictionaries = {
+  emotions: {
+    fear: [
+      "afraid",
+      "fear",
+      "scared",
+      "anxious",
+      "panic",
+      "worried",
+      "uneasy",
+      "nervous",
+    ],
+    anger: [
+      "angry",
+      "mad",
+      "resent",
+      "furious",
+      "irritated",
+      "pissed",
+      "annoyed",
+    ],
+    shame: ["ashamed", "embarrassed", "humiliated", "stupid", "guilty"],
+    sadness: ["sad", "hurt", "cry", "empty", "grief", "lonely", "down"],
+    rejection: [
+      "ignored",
+      "rejected",
+      "left out",
+      "abandoned",
+      "not chosen",
+      "dismissed",
+      "unwanted",
+    ],
+    control: [
+      "control",
+      "helpless",
+      "powerless",
+      "stuck",
+      "trapped",
+      "cornered",
+    ],
+  },
+  triggers: {
+    family: [
+      "mom",
+      "mother",
+      "dad",
+      "father",
+      "sister",
+      "brother",
+      "family",
+      "parent",
+    ],
+    relationship: [
+      "boyfriend",
+      "girlfriend",
+      "partner",
+      "husband",
+      "wife",
+      "relationship",
+      "dating",
+    ],
+    work: ["work", "boss", "job", "manager", "coworker", "office", "shift"],
+    selfImage: ["body", "looks", "ugly", "pretty", "weight", "shape", "skin"],
+    money: ["money", "bills", "debt", "rent", "broke", "paycheck"],
+    health: ["sick", "pain", "doctor", "hospital", "health", "medication"],
+  },
+  beliefs: {
+    abandonment: ["left", "leave me", "abandoned", "not chosen", "replace me"],
+    unworthiness: [
+      "not enough",
+      "unlovable",
+      "worthless",
+      "undeserving",
+      "not good enough",
+    ],
+    overResponsibility: [
+      "my fault",
+      "i have to fix",
+      "i have to help",
+      "responsible for everyone",
+    ],
+    mistrust: [
+      "cannot trust",
+      "don't trust",
+      "they lie",
+      "they always lie",
+      "unsafe with people",
+    ],
+    selfSilencing: [
+      "keep quiet",
+      "say nothing",
+      "hold it in",
+      "swallow it",
+      "stay silent",
+    ],
+  },
+  coping: {
+    avoidance: [
+      "avoid",
+      "ignore it",
+      "pretend",
+      "shut down",
+      "disconnect",
+      "numb",
+    ],
+    caretaking: ["help them", "save them", "fix them", "take care of them"],
+    peoplePleasing: [
+      "keep the peace",
+      "make them happy",
+      "please them",
+      "don't upset them",
+    ],
+    rumination: [
+      "overthink",
+      "thinking about it",
+      "replay",
+      "keep replaying",
+      "looping",
+    ],
+    confrontation: ["argue", "confront", "call out", "fight back"],
+  },
+};
+
+type DetailedAnalysis = {
+  id: number;
+  storyName: string;
+  entryPoint: string;
+  lens: string;
+  entry: string;
+  emotions: string[];
+  triggers: string[];
+  beliefs: string[];
+  coping: string[];
+  timestamp: string;
+};
+
+function runDetailedAnalysis(
+  entry: string,
+  entryPoint: string,
+  lensTitle: string,
+  storyName: string,
+): DetailedAnalysis {
+  const text = (entry || "").toLowerCase();
+  function detect(map: Record<string, string[]>): string[] {
+    return Object.entries(map)
+      .filter(([, words]) => words.some((w) => text.includes(w)))
+      .map(([label]) => label);
+  }
+  return {
+    id: Date.now(),
+    storyName: storyName || "Unnamed story",
+    entryPoint: entryPoint || "surface",
+    lens: lensTitle || "Unknown",
+    entry,
+    emotions: detect(analysisDictionaries.emotions),
+    triggers: detect(analysisDictionaries.triggers),
+    beliefs: detect(analysisDictionaries.beliefs),
+    coping: detect(analysisDictionaries.coping),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function saveDetailedEntry(analysis: DetailedAnalysis): void {
+  try {
+    const existing: DetailedAnalysis[] = JSON.parse(
+      localStorage.getItem(ENTRIES_KEY) || "[]",
+    );
+    if (!existing.some((e) => e.id === analysis.id)) {
+      existing.push(analysis);
+      localStorage.setItem(ENTRIES_KEY, JSON.stringify(existing));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function getHistoryInsights() {
+  try {
+    const saved: DetailedAnalysis[] = JSON.parse(
+      localStorage.getItem(ENTRIES_KEY) || "[]",
+    );
+    if (!saved.length) return null;
+    function countTags(key: keyof DetailedAnalysis) {
+      const counts: Record<string, number> = {};
+      for (const item of saved) {
+        for (const tag of (item[key] as string[]) || []) {
+          counts[tag] = (counts[tag] || 0) + 1;
+        }
+      }
+      return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    }
+    function patternLabel(count: number) {
+      if (count >= 5) return "Major pattern";
+      if (count >= 3) return "Recurring pattern";
+      if (count >= 2) return "Emerging pattern";
+      return "Early signal";
+    }
+    return {
+      count: saved.length,
+      emotions: countTags("emotions"),
+      triggers: countTags("triggers"),
+      beliefs: countTags("beliefs"),
+      coping: countTags("coping"),
+      patternLabel,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -1762,6 +1975,8 @@ function BookJourney({
   );
   const [threadInput, setThreadInput] = useState("");
   const [inConversation, setInConversation] = useState(false);
+  const [detailedAnalysis, setDetailedAnalysis] =
+    useState<DetailedAnalysis | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const activePath = useMemo(
@@ -1942,6 +2157,15 @@ function BookJourney({
       }
       onSetProfile(updated);
       saveProfile(updated);
+      const allResponses = savedChapters.map((c) => c.response).join(" ");
+      const da = runDetailedAnalysis(
+        allResponses,
+        selectedPath ?? "",
+        activePath?.label ?? "",
+        sharedName,
+      );
+      setDetailedAnalysis(da);
+      saveDetailedEntry(da);
       onSetStep(5);
     }
   }
@@ -2797,6 +3021,120 @@ function BookJourney({
             </div>
           </div>
 
+          {/* Deeper scan - current session */}
+          {detailedAnalysis && (
+            <div
+              className="rounded-[28px] border p-5 space-y-3"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+            >
+              <p
+                className="text-sm font-bold uppercase tracking-[0.2em] mb-4"
+                style={{ color: "#d9a6b7" }}
+              >
+                Deeper scan
+              </p>
+              {[
+                { label: "Emotional themes", value: detailedAnalysis.emotions },
+                {
+                  label: "Likely trigger area",
+                  value: detailedAnalysis.triggers,
+                },
+                {
+                  label: "Core belief signals",
+                  value: detailedAnalysis.beliefs,
+                },
+                { label: "Coping style", value: detailedAnalysis.coping },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="rounded-2xl p-4"
+                  style={{ backgroundColor: "#2b2025" }}
+                >
+                  <p
+                    className="text-xs font-semibold mb-1"
+                    style={{ color: "#d9a6b7" }}
+                  >
+                    {label}
+                  </p>
+                  <p
+                    className="text-sm leading-relaxed"
+                    style={{ color: "#dbc8cf" }}
+                  >
+                    {value.length
+                      ? value.join(", ")
+                      : "Nothing detected yet — keep reflecting"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pattern history across sessions */}
+          {(() => {
+            const historyInsights = getHistoryInsights();
+            return (
+              <div
+                className="rounded-[28px] border p-5 space-y-3"
+                style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+              >
+                <p
+                  className="text-sm font-bold uppercase tracking-[0.2em] mb-4"
+                  style={{ color: "#d9a6b7" }}
+                >
+                  Your pattern history
+                  {historyInsights
+                    ? ` · ${historyInsights.count} session${historyInsights.count === 1 ? "" : "s"}`
+                    : ""}
+                </p>
+                {historyInsights ? (
+                  [
+                    { label: "Emotion trend", data: historyInsights.emotions },
+                    { label: "Trigger trend", data: historyInsights.triggers },
+                    { label: "Belief trend", data: historyInsights.beliefs },
+                    { label: "Coping trend", data: historyInsights.coping },
+                  ].map(({ label, data }) => {
+                    const top = data[0];
+                    return (
+                      <div
+                        key={label}
+                        className="rounded-2xl p-4"
+                        style={{ backgroundColor: "#2b2025" }}
+                      >
+                        <p
+                          className="text-xs font-semibold mb-1"
+                          style={{ color: "#d9a6b7" }}
+                        >
+                          {label}
+                        </p>
+                        <p
+                          className="text-sm leading-relaxed"
+                          style={{ color: "#dbc8cf" }}
+                        >
+                          {top
+                            ? `${top[0]} · appeared ${top[1]}x · ${historyInsights.patternLabel(top[1])}`
+                            : "No pattern data yet"}
+                        </p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div
+                    className="rounded-2xl p-4"
+                    style={{ backgroundColor: "#2b2025" }}
+                  >
+                    <p
+                      className="text-sm leading-relaxed"
+                      style={{ color: "#dbc8cf" }}
+                    >
+                      Complete your first session to start building a pattern
+                      history.
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Profile */}
           {profile.sessions > 0 && (
             <div
@@ -2986,6 +3324,7 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [accessInput, setAccessInput] = useState("");
+  const [unlockedCode, setUnlockedCode] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
   const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
   const [sessionCountdown, setSessionCountdown] = useState(SESSION_TIMEOUT_MS);
@@ -3284,6 +3623,7 @@ export default function App() {
                 const name = allowedCodes[accessInput.trim()];
                 if (name) {
                   setUserName(name);
+                  setUnlockedCode(accessInput.trim());
                   setShowWelcome(true);
                 } else {
                   alert("Invalid code. Please try again.");
@@ -3507,8 +3847,8 @@ export default function App() {
             >
               {isUnlocked ? getStepLabel() : "Welcome"}
             </div>
-            {/* Feedback icon */}
-            {isUnlocked && (
+            {/* Feedback icon - creator only */}
+            {isUnlocked && unlockedCode === "Iamki" && (
               <button
                 type="button"
                 data-ocid="topbar.feedback.open_modal_button"
@@ -3728,6 +4068,7 @@ export default function App() {
                       const name = allowedCodes[accessInput.trim()];
                       if (name) {
                         setUserName(name);
+                        setUnlockedCode(accessInput.trim());
                         setShowWelcome(true);
                       } else alert("Invalid code. Please try again.");
                     }}
