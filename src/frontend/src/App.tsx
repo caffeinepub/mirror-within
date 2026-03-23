@@ -1,96 +1,65 @@
+import {
+  ArrowLeft,
+  BookOpen,
+  ChevronRight,
+  Feather,
+  Mic,
+  PauseCircle,
+  PenTool,
+  PlayCircle,
+  Sparkles,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Screen =
-  | "onboarding"
-  | "checkin"
-  | "intake"
-  | "shadow"
-  | "journal"
-  | "insights"
-  | "resources"
-  | "breathe"
-  | "creator";
+type Screen = "journey" | "breathe" | "support" | "creator";
 
-type PromptItem = {
+type FeedbackEntry = {
   id: string;
-  question: string;
-  placeholder: string;
-  category: "intake" | "shadow";
+  userName: string;
+  message: string;
+  createdAt: string;
+  screen: string;
 };
 
-type SavedEntry = {
-  id: string;
-  createdAt: string;
-  answers: Record<string, string>;
-  mood: string;
-  reason: string;
+type ChapterRecord = {
+  chapter: number;
+  question: string;
+  response: string;
+  followups: string[];
+  mode: string;
+};
+
+type PatternProfile = {
+  counts: Record<string, number>;
+  sessions: number;
+};
+
+type JourneyDraft = {
+  step: number;
+  sharedName: string;
+  selectedPath: string | null;
+  selectedMode: string | null;
+  chapterIndex: number;
+  typedResponses: Record<number, string>;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const STORAGE_KEY = "mirror_within_entries_v1";
+const DRAFT_KEY = "mirror_within_draft_v4";
+const SESSION_KEY = "mirror_within_session_v4";
+const FEEDBACK_KEY = "mirror_within_feedback_v4";
+const PROFILE_KEY = "mw_profile_v1";
+const SESSION_TIMEOUT_MS = 1000 * 60 * 15;
 
-const prompts: PromptItem[] = [
-  {
-    id: "why_downloaded",
-    category: "intake",
-    question: "Why did you download this app in the first place?",
-    placeholder: "What are you hoping to understand, heal, or change?",
-  },
-  {
-    id: "feelings_today",
-    category: "intake",
-    question:
-      "How are you feeling right now beneath the first answer that comes to mind?",
-    placeholder: "Name the emotions, body sensations, and thoughts.",
-  },
-  {
-    id: "what_hurts",
-    category: "intake",
-    question: "What keeps hurting even when you try to move on?",
-    placeholder: "What pattern keeps repeating?",
-  },
-  {
-    id: "mask",
-    category: "shadow",
-    question: "What version of yourself do you perform for other people?",
-    placeholder: "Who are you trying to protect, please, or impress?",
-  },
-  {
-    id: "trigger",
-    category: "shadow",
-    question:
-      "Who triggers you the most, and what might they reflect back to you?",
-    placeholder: "What qualities do they bring up in you?",
-  },
-  {
-    id: "control",
-    category: "shadow",
-    question:
-      "Where are you forcing control because you are afraid of being hurt?",
-    placeholder: "What would soften if you loosened your grip?",
-  },
-  {
-    id: "truth",
-    category: "shadow",
-    question: "What truth about yourself have you been avoiding?",
-    placeholder: "Write the sentence you least want to admit.",
-  },
-  {
-    id: "self_betrayal",
-    category: "shadow",
-    question:
-      "In what ways do you betray yourself to avoid rejection, conflict, or abandonment?",
-    placeholder: "Where do you silence yourself?",
-  },
-  {
-    id: "integration",
-    category: "shadow",
-    question: "What part of yourself are you ready to stop hiding?",
-    placeholder: "What would living more honestly this week look like?",
-  },
-];
+const allowedCodes: Record<string, string> = {
+  Ree17: "kareesha",
+  BluhzM: "mark",
+  Kayswt: "Kayden",
+  FieldsD: "Garfield",
+  Jade: "jaida",
+  Iamki: "creator",
+};
 
 const crisisKeywords = [
   "suicide",
@@ -107,248 +76,270 @@ const crisisKeywords = [
   "unalive",
   "jump off",
   "no reason to live",
+  "tired of everything",
+  "no point",
 ];
 
+const entryPaths = [
+  {
+    id: "surface",
+    label: "Surface level",
+    tone: "Light entry point",
+    blurb:
+      "For when you want to ease into reflection without feeling cornered.",
+    tag: "Micro-introspection",
+    chapterTitle: "A quieter chapter",
+    questions: [
+      "What annoyed you today more than it should have?",
+      "What moment stayed with you after it was over?",
+      "What felt off, but you brushed past it?",
+    ],
+  },
+  {
+    id: "attacked",
+    label: "Ok I feel attacked",
+    tone: "Sharper honesty",
+    blurb:
+      "For when you want the app to call out the pattern instead of dancing around it.",
+    tag: "Shadow work",
+    chapterTitle: "The call-out chapter",
+    questions: [
+      "What truth are you avoiding because naming it would force change?",
+      "What are you pretending not to care about?",
+      "What keeps repeating because it feels familiar, not because it feels right?",
+    ],
+  },
+  {
+    id: "love",
+    label: "Love, distance, and attachment",
+    tone: "Relationship lens",
+    blurb:
+      "For moments shaped by rejection, craving, confusion, or being too invested.",
+    tag: "Attachment patterns",
+    chapterTitle: "The heart chapter",
+    questions: [
+      "Do you want to be loved, or do you want to be chosen?",
+      "What are you over-giving to keep?",
+      "Are you reacting to them, or to what they made you feel about yourself?",
+    ],
+  },
+  {
+    id: "control",
+    label: "Control, pressure, and performance",
+    tone: "Protective lens",
+    blurb:
+      "For when your mind won't stop managing, planning, bracing, or carrying everything.",
+    tag: "Fear + identity",
+    chapterTitle: "The grip chapter",
+    questions: [
+      "What are you trying to control that is actually controlling you?",
+      "What would happen if you loosened your grip?",
+      "Who are you when you are not performing competence?",
+    ],
+  },
+];
+
+const followupsByPath: Record<string, string[]> = {
+  surface: [
+    "Why did that small moment take up more space than it should have?",
+    "What emotion was under the irritation, distance, or discomfort?",
+  ],
+  attacked: [
+    "What changes the second you stop pretending not to know this?",
+    "What do you gain from keeping this pattern alive?",
+  ],
+  love: [
+    "Are you trying to be understood, or are you trying not to be abandoned?",
+    "What are you accepting because being chosen feels better than being alone?",
+  ],
+  control: [
+    "What are you afraid would happen if you were not holding everything together?",
+    "Who are you without the role of being the one who manages it all?",
+  ],
+};
+
+const basePatterns = [
+  {
+    id: "avoidance",
+    name: "Avoidance",
+    test: (t: string) => /(avoid|ignore|pretend|fine)/i.test(t),
+    advice: "You may be avoiding naming something directly.",
+  },
+  {
+    id: "control",
+    name: "Control",
+    test: (t: string) => /(control|plan|figure out|overthink)/i.test(t),
+    advice: "You may be trying to control outcomes to feel safe.",
+  },
+  {
+    id: "abandonment",
+    name: "Fear of abandonment",
+    test: (t: string) => /(leave|left|ignored|distance|not chosen)/i.test(t),
+    advice: "There may be sensitivity to rejection or distance.",
+  },
+  {
+    id: "overgiving",
+    name: "Over-giving",
+    test: (t: string) => /(give|gave|fix|do everything|prove)/i.test(t),
+    advice: "You may be linking worth to what you give.",
+  },
+];
+
+const adaptiveQuestions = {
+  deepen: [
+    "If this pattern stopped tomorrow, what would change immediately?",
+    "What are you protecting by keeping this pattern alive?",
+    "Where did you first learn this response?",
+  ],
+  shift: [
+    "What perspective have you not considered yet?",
+    "If someone you trust saw this, what would they say?",
+    "What would the opposite reaction look like?",
+  ],
+  stay: [
+    "What detail are you still skimming past?",
+    "What part of this feels most uncomfortable to name?",
+    "What are you not saying directly yet?",
+  ],
+};
+
+const CREATOR_STORY = {
+  WHO_I_AM: [
+    "I am someone who spent years performing okayness while something quieter burned underneath.",
+    "I learned early that to be soft was to be unsafe, and so I became competent. Controlled. Contained.",
+  ],
+  MY_BATTLE: [
+    "Anxiety that lived behind productivity. Relationships I over-gave to. A relentless internal critic dressed as high standards.",
+    "I journaled for years but always wrote around the real thing. I needed something that would call me out. Something that asked the question behind the question.",
+  ],
+  WHY_I_BUILT_THIS: [
+    "I built Mirror Within because I needed it and could not find it. Not a mood tracker. Not a gratitude app. Something that goes inward instead of around.",
+    "This app is for the people who already know something is there, and need help naming it.",
+  ],
+  CLOSING_QUOTE_LINE1:
+    "You do not need to have it figured out. You just need to be honest about what you already know.",
+  CLOSING_QUOTE_LINE2:
+    "That is what Mirror Within is for. Take your time in here.",
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+function safeJsonParse<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function formatTimeRemaining(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function hasCrisisLanguage(text: string): boolean {
   const lower = text.toLowerCase();
   return crisisKeywords.some((kw) => lower.includes(kw));
 }
 
-function buildInsight(answers: Record<string, string>): string[] {
-  const values = Object.values(answers).join(" ").toLowerCase();
-  const patterns: string[] = [];
+function getCrisisSeverity(text: string): "high" | "medium" | "low" | null {
+  const t = (text || "").toLowerCase();
   if (
-    values.includes("control") ||
-    values.includes("afraid") ||
-    values.includes("scared")
+    t.includes("kill myself") ||
+    t.includes("end my life") ||
+    t.includes("overdose")
   )
-    patterns.push(
-      "Fear may be showing up as control, hyper-vigilance, or overthinking.",
-    );
+    return "high";
   if (
-    values.includes("please") ||
-    values.includes("rejection") ||
-    values.includes("abandon")
+    t.includes("want to die") ||
+    t.includes("don't want to live") ||
+    t.includes("suicide")
   )
-    patterns.push(
-      "People-pleasing or fear of abandonment may be shaping your choices.",
-    );
+    return "medium";
   if (
-    values.includes("angry") ||
-    values.includes("resent") ||
-    values.includes("trigger")
+    t.includes("tired of everything") ||
+    t.includes("no point") ||
+    t.includes("better off dead")
   )
-    patterns.push(
-      "Your anger may be pointing toward unmet needs, violated boundaries, or disowned parts of self.",
-    );
-  if (
-    values.includes("tired") ||
-    values.includes("empty") ||
-    values.includes("numb")
-  )
-    patterns.push(
-      "Exhaustion may be emotional, not just physical. You may need rest, grief, or honesty more than productivity.",
-    );
-  if (patterns.length === 0)
-    patterns.push(
-      "Your answers suggest you are still uncovering the pattern. Read them slowly and notice which sentence feels the most charged or uncomfortable.",
-    );
-  return patterns;
+    return "low";
+  return null;
 }
 
-function loadFromStorage(): SavedEntry[] {
+function severityCopy(severity: "high" | "medium" | "low" | null): {
+  title: string;
+  body: string;
+} {
+  if (severity === "high")
+    return {
+      title: "Immediate support matters right now.",
+      body: "What you wrote suggests you may be in immediate danger. Please reach out for urgent human support now.",
+    };
+  if (severity === "medium")
+    return {
+      title: "You deserve support right now.",
+      body: "What you wrote sounds serious. Please connect with crisis support, someone you trust, or emergency help if you may act on these thoughts.",
+    };
+  return {
+    title: "It sounds like you're carrying something heavy.",
+    body: "Please do not sit with this alone. Even if you are unsure, reaching out to a real person can help.",
+  };
+}
+
+function detectPatternIds(texts: string[]): string[] {
+  const joined = texts.join(" ");
+  return basePatterns.filter((p) => p.test(joined)).map((p) => p.id);
+}
+
+function pickNextRoute(
+  detectedIds: string[],
+  profile: PatternProfile,
+): {
+  action: "deepen" | "stay" | "shift";
+  focus: string | null;
+  reason: string;
+} {
+  if (!detectedIds.length)
+    return { action: "shift", focus: null, reason: "No clear pattern yet" };
+  const merged: Record<string, number> = { ...profile.counts };
+  for (const id of detectedIds) {
+    merged[id] = (merged[id] || 0) + 1;
+  }
+  const dominant =
+    Object.entries(merged).sort((a, b) => (b[1] || 0) - (a[1] || 0))[0]?.[0] ??
+    null;
+  if (dominant && (profile.counts[dominant] || 0) >= 2) {
+    return {
+      action: "deepen",
+      focus: dominant,
+      reason: "Recurring pattern detected",
+    };
+  }
+  return {
+    action: "stay",
+    focus: dominant,
+    reason: "Keep exploring this layer",
+  };
+}
+
+function loadProfile(): PatternProfile {
+  return safeJsonParse<PatternProfile>(localStorage.getItem(PROFILE_KEY), {
+    counts: {},
+    sessions: 0,
+  });
+}
+
+function saveProfile(p: PatternProfile): void {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as SavedEntry[]) : [];
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
   } catch {
-    return [];
+    // ignore
   }
 }
 
-function saveToStorage(entries: SavedEntry[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-}
-
-// ─── Sub-components ──────────────────────────────────────────────────────────
-function PrimaryButton({
-  onClick,
-  children,
-  "data-ocid": ocid,
-}: {
-  onClick?: () => void;
-  children: React.ReactNode;
-  "data-ocid"?: string;
-}) {
-  return (
-    <button
-      type="button"
-      data-ocid={ocid}
-      onClick={onClick}
-      className="w-full rounded-[18px] py-4 px-4 text-sm font-extrabold mt-1 transition-opacity hover:opacity-90 active:opacity-80"
-      style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SecondaryButton({
-  onClick,
-  children,
-  "data-ocid": ocid,
-}: {
-  onClick?: () => void;
-  children: React.ReactNode;
-  "data-ocid"?: string;
-}) {
-  return (
-    <button
-      type="button"
-      data-ocid={ocid}
-      onClick={onClick}
-      className="w-full rounded-[18px] py-[14px] px-4 text-sm font-bold mt-2 border transition-opacity hover:opacity-80 active:opacity-70"
-      style={{
-        borderColor: "#76515e",
-        color: "#f4d6df",
-        backgroundColor: "transparent",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Card({
-  children,
-  className = "",
-}: { children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={`rounded-[24px] p-[18px] mb-4 border ${className}`}
-      style={{ backgroundColor: "#20161b", borderColor: "#38262e" }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h2
-      className="text-[22px] font-extrabold mb-3 font-display"
-      style={{ color: "#fff4f8" }}
-    >
-      {children}
-    </h2>
-  );
-}
-
-function BodyText({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[15px] leading-[23px] mb-3" style={{ color: "#dbc8cf" }}>
-      {children}
-    </p>
-  );
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-sm font-bold mb-2 mt-1" style={{ color: "#f2d7e0" }}>
-      {children}
-    </p>
-  );
-}
-
-function MultilineInput({
-  value,
-  onChange,
-  placeholder,
-  "data-ocid": ocid,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  "data-ocid"?: string;
-}) {
-  return (
-    <textarea
-      data-ocid={ocid}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={5}
-      className="w-full rounded-[18px] p-[14px] text-[15px] leading-[22px] border focus:outline-none focus:ring-2"
-      style={{
-        backgroundColor: "#2b2025",
-        borderColor: "#4a323c",
-        color: "#fff",
-        minHeight: "120px",
-        resize: "vertical",
-      }}
-    />
-  );
-}
-
-function SingleInput({
-  value,
-  onChange,
-  placeholder,
-  "data-ocid": ocid,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  "data-ocid"?: string;
-}) {
-  return (
-    <input
-      data-ocid={ocid}
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full rounded-[18px] px-[14px] py-[15px] text-[15px] border mb-3 focus:outline-none focus:ring-2"
-      style={{
-        backgroundColor: "#2b2025",
-        borderColor: "#4a323c",
-        color: "#fff",
-        minHeight: "54px",
-      }}
-    />
-  );
-}
-
-function PromptCard({
-  prompt,
-  value,
-  onChange,
-}: {
-  prompt: PromptItem;
-  value: string;
-  onChange: (id: string, val: string) => void;
-}) {
-  return (
-    <Card>
-      <p
-        className="text-[17px] font-bold mb-3 leading-[24px]"
-        style={{ color: "#fff0f5" }}
-      >
-        {prompt.question}
-      </p>
-      <MultilineInput
-        value={value}
-        onChange={(v) => onChange(prompt.id, v)}
-        placeholder={prompt.placeholder}
-        data-ocid={`${prompt.id}.textarea`}
-      />
-    </Card>
-  );
-}
-
-// ─── Breathe Screen ───────────────────────────────────────────────────────────
+// ─── BreatheScreen ────────────────────────────────────────────────────────────
 type BreathePhase = "inhale" | "hold-in" | "exhale" | "hold-out";
-
 const BREATHE_PHASES: {
   phase: BreathePhase;
   label: string;
@@ -372,7 +363,6 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
     phaseIndexRef.current = 0;
     setCountdown(4);
     setPhaseIndex(0);
-
     intervalRef.current = setInterval(() => {
       countdownRef.current -= 1;
       if (countdownRef.current <= 0) {
@@ -383,7 +373,6 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
       }
       setCountdown(countdownRef.current);
     }, 1000);
-
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
@@ -398,7 +387,7 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className="flex flex-col items-center"
+      className="flex flex-col items-center py-8"
     >
       <h2
         className="text-[24px] font-extrabold mb-2 font-display text-center"
@@ -409,7 +398,6 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
       <p className="text-sm mb-10 text-center" style={{ color: "#dbc8cf" }}>
         4 · 4 · 4 · 4 — breathe at your own pace
       </p>
-
       <div
         className="relative flex items-center justify-center mb-10"
         style={{ width: 220, height: 220 }}
@@ -441,7 +429,6 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
           {countdown}
         </span>
       </div>
-
       <motion.p
         key={currentPhase.phase}
         initial={{ opacity: 0, y: 6 }}
@@ -452,7 +439,6 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
       >
         {currentPhase.label}
       </motion.p>
-
       <div className="flex gap-3 mb-14">
         {BREATHE_PHASES.map((bp, i) => (
           <div
@@ -466,7 +452,6 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
           />
         ))}
       </div>
-
       <button
         type="button"
         data-ocid="breathe.stop.button"
@@ -484,142 +469,15 @@ function BreatheScreen({ onStop }: { onStop: () => void }) {
   );
 }
 
-// ─── Entry Detail Modal ───────────────────────────────────────────────────────
-function EntryDetailModal({
-  entry,
-  onClose,
-}: {
-  entry: SavedEntry | null;
-  onClose: () => void;
-}) {
-  if (!entry) return null;
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-5 overflow-y-auto"
-      style={{ backgroundColor: "rgba(20,15,18,0.92)" }}
-      data-ocid="entry_detail.modal"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyUp={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
-      role="presentation"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.25 }}
-        className="w-full max-w-lg rounded-[24px] p-6 border my-8"
-        style={{ backgroundColor: "#20161b", borderColor: "#38262e" }}
-      >
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <p
-              className="text-[13px] font-extrabold tracking-[1.2px] uppercase mb-1"
-              style={{ color: "#d9a6b7" }}
-            >
-              Journal Entry
-            </p>
-            <p className="text-sm" style={{ color: "#dbc8cf" }}>
-              {new Date(entry.createdAt).toLocaleString()}
-            </p>
-          </div>
-        </div>
-
-        <div
-          className="rounded-[18px] p-4 mb-4"
-          style={{ backgroundColor: "#2b2025" }}
-        >
-          <p
-            className="text-xs font-bold uppercase tracking-wide mb-1"
-            style={{ color: "#d9a6b7" }}
-          >
-            Mood
-          </p>
-          <p className="text-[15px]" style={{ color: "#fff0f5" }}>
-            {entry.mood || "Not set"}
-          </p>
-        </div>
-        <div
-          className="rounded-[18px] p-4 mb-4"
-          style={{ backgroundColor: "#2b2025" }}
-        >
-          <p
-            className="text-xs font-bold uppercase tracking-wide mb-1"
-            style={{ color: "#d9a6b7" }}
-          >
-            Why I came here
-          </p>
-          <p
-            className="text-[15px] leading-[23px]"
-            style={{ color: "#fff0f5" }}
-          >
-            {entry.reason || "Not set"}
-          </p>
-        </div>
-
-        {prompts
-          .filter((p) => entry.answers[p.id])
-          .map((p) => (
-            <div
-              key={p.id}
-              className="rounded-[18px] p-4 mb-3"
-              style={{ backgroundColor: "#2b2025" }}
-            >
-              <p
-                className="text-xs font-bold uppercase tracking-wide mb-1"
-                style={{ color: "#d9a6b7" }}
-              >
-                {p.category === "shadow" ? "Shadow" : "Intake"}
-              </p>
-              <p
-                className="text-sm font-semibold mb-2 leading-[20px]"
-                style={{ color: "#f6dae3" }}
-              >
-                {p.question}
-              </p>
-              <p
-                className="text-[15px] leading-[23px]"
-                style={{ color: "#e8d0d8" }}
-              >
-                {entry.answers[p.id]}
-              </p>
-            </div>
-          ))}
-
-        <button
-          type="button"
-          data-ocid="entry_detail.close_button"
-          onClick={onClose}
-          className="w-full mt-3 rounded-[18px] py-3 text-sm font-bold border transition-opacity hover:opacity-80"
-          style={{
-            borderColor: "#76515e",
-            color: "#f4d6df",
-            backgroundColor: "transparent",
-          }}
-        >
-          Close
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
-// ─── Crisis Modal ─────────────────────────────────────────────────────────────
+// ─── CrisisModal ──────────────────────────────────────────────────────────────
 function CrisisModal({
   open,
-  crisisCount,
   onClose,
-  onResources,
-  onShareLocation,
+  onSupport,
 }: {
   open: boolean;
-  crisisCount: number;
   onClose: () => void;
-  onResources: () => void;
-  onShareLocation: () => void;
+  onSupport: () => void;
 }) {
   if (!open) return null;
   return (
@@ -642,40 +500,21 @@ function CrisisModal({
         >
           Immediate support matters
         </h3>
-        <p className="text-sm leading-6 mb-3" style={{ color: "#dbc8cf" }}>
+        <p className="text-sm leading-6 mb-4" style={{ color: "#dbc8cf" }}>
           It sounds like you may be going through something intense right now.
           This app is not enough on its own for an immediate safety crisis.
           Please reach out to emergency services, a crisis line, or someone
-          physically near you right now if you may act on these thoughts.
+          physically near you.
         </p>
-        {crisisCount >= 2 && (
-          <p className="text-sm leading-6 mb-3" style={{ color: "#d9a6b7" }}>
-            You can also choose to share your live location for this session
-            only if you want faster help reaching you.
-          </p>
-        )}
-        <div className="flex flex-col gap-2 mt-4">
+        <div className="flex flex-col gap-2">
           <button
             type="button"
             data-ocid="crisis.confirm_button"
-            onClick={onResources}
+            onClick={onSupport}
             className="w-full rounded-[18px] py-3 text-sm font-extrabold transition-opacity hover:opacity-90"
             style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
           >
-            Crisis resources
-          </button>
-          <button
-            type="button"
-            data-ocid="crisis.secondary_button"
-            onClick={onShareLocation}
-            className="w-full rounded-[18px] py-3 text-sm font-bold border transition-opacity hover:opacity-80"
-            style={{
-              borderColor: "#76515e",
-              color: "#f4d6df",
-              backgroundColor: "transparent",
-            }}
-          >
-            Share live location
+            Get support now
           </button>
           <button
             type="button"
@@ -692,8 +531,8 @@ function CrisisModal({
   );
 }
 
-// ─── Delete Confirm Modal ─────────────────────────────────────────────────────
-function DeleteModal({
+// ─── ClearDataModal ───────────────────────────────────────────────────────────
+function ClearDataModal({
   open,
   onConfirm,
   onCancel,
@@ -707,7 +546,7 @@ function DeleteModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-5"
       style={{ backgroundColor: "rgba(20,15,18,0.88)" }}
-      data-ocid="delete.modal"
+      data-ocid="clear_data.modal"
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
@@ -720,15 +559,16 @@ function DeleteModal({
           className="text-lg font-extrabold mb-2 font-display"
           style={{ color: "#fff4f8" }}
         >
-          Delete local journal entries?
+          Clear all local data?
         </h3>
         <p className="text-sm leading-6 mb-4" style={{ color: "#dbc8cf" }}>
-          This will permanently remove all saved entries from this device.
+          This will permanently remove your journey drafts, feedback, and
+          pattern profile from this device.
         </p>
         <div className="flex gap-3">
           <button
             type="button"
-            data-ocid="delete.cancel_button"
+            data-ocid="clear_data.cancel_button"
             onClick={onCancel}
             className="flex-1 rounded-[18px] py-3 text-sm font-bold border"
             style={{
@@ -741,12 +581,12 @@ function DeleteModal({
           </button>
           <button
             type="button"
-            data-ocid="delete.confirm_button"
+            data-ocid="clear_data.confirm_button"
             onClick={onConfirm}
             className="flex-1 rounded-[18px] py-3 text-sm font-extrabold"
             style={{ backgroundColor: "#c0445e", color: "#fff" }}
           >
-            Delete
+            Clear all
           </button>
         </div>
       </motion.div>
@@ -754,106 +594,85 @@ function DeleteModal({
   );
 }
 
-// ─── Nav ─────────────────────────────────────────────────────────────────────
-const navItems: { label: string; screen: Screen }[] = [
-  { label: "Check-in", screen: "checkin" },
-  { label: "Breathe", screen: "breathe" },
-  { label: "Intake", screen: "intake" },
-  { label: "Shadow", screen: "shadow" },
-  { label: "Journal", screen: "journal" },
-  { label: "Insights", screen: "insights" },
-  { label: "Help", screen: "resources" },
-  { label: "Our Story", screen: "creator" },
-];
-
-function Nav({
-  current,
-  onNav,
-}: { current: Screen; onNav: (s: Screen) => void }) {
+// ─── ProgressRings ────────────────────────────────────────────────────────────
+function ProgressRings({ step }: { step: number }) {
   return (
-    <nav className="flex flex-wrap gap-2 mb-5" data-ocid="nav.panel">
-      {navItems.map(({ label, screen }) => (
-        <button
-          type="button"
-          key={screen}
-          data-ocid={`nav.${screen}.link`}
-          onClick={() => onNav(screen)}
-          className="rounded-full px-[13px] py-[9px] text-[13px] font-semibold border transition-all"
+    <div className="flex items-center gap-2">
+      {[1, 2, 3, 4, 5].map((item) => (
+        <div
+          key={item}
+          className="h-2.5 w-8 rounded-full transition-all duration-300"
           style={{
-            backgroundColor: current === screen ? "#38262e" : "#2a1e24",
-            borderColor: "#4a323c",
-            color: "#f1d8df",
+            backgroundColor: item <= step ? "#efc1d0" : "#3a2b31",
           }}
-        >
-          {label}
-        </button>
+        />
       ))}
-    </nav>
+    </div>
   );
 }
 
-// ─── Creator Screen ───────────────────────────────────────────────────────────
-// ── EDIT YOUR STORY BELOW ──
-// Replace the placeholder text in each section with your own words.
-// Sections: WHO_I_AM, MY_BATTLE, WHY_I_BUILT_THIS, CLOSING_QUOTE
+// ─── PathPreview ──────────────────────────────────────────────────────────────
+function PathPreview({
+  path,
+  selected,
+  onClick,
+}: {
+  path: (typeof entryPaths)[number];
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-[28px] border p-5 text-left transition w-full"
+      style={{
+        borderColor: selected ? "#efc1d0" : "#3d2a32",
+        backgroundColor: selected ? "#2a1d23" : "#24181d",
+      }}
+    >
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-lg font-extrabold" style={{ color: "#fff4f8" }}>
+            {path.label}
+          </p>
+          <p
+            className="mt-1 text-sm font-semibold"
+            style={{ color: "#efc1d0" }}
+          >
+            {path.tone}
+          </p>
+          <p className="mt-3 text-sm leading-6" style={{ color: "#d5c4cb" }}>
+            {path.blurb}
+          </p>
+        </div>
+        <span
+          className="self-start rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide whitespace-nowrap"
+          style={{ borderColor: "#4a323c", color: "#f0d7df" }}
+        >
+          {path.tag}
+        </span>
+      </div>
+    </button>
+  );
+}
 
-const CREATOR_STORY = {
-  // ── WHO I AM ─────────────────────────────────────────────────────────────
-  // A short intro. Who are you before the story starts?
-  WHO_I_AM: [
-    "I'm someone who spent years performing okay-ness while falling apart on the inside. I built things to feel useful when I couldn't feel much else. I've been the person in the room holding everyone together — while quietly having no idea how to hold myself.",
-    "This is not a story about healing being linear. It's a story about staying.",
-  ],
-
-  // ── MY BATTLE ────────────────────────────────────────────────────────────
-  // The honest version of what you've been through with mental health.
-  MY_BATTLE: [
-    "I built this app from the inside of a dark chapter. Not from a place of having it figured out, but from a place of desperately needing something that could hold me while I tried to figure it out.",
-    "There were nights I sat with the weight of every version of myself I'd abandoned — the one who used to laugh easily, the one who trusted people before the patterns started, the one who slept without running through every possible way the next day could go wrong.",
-    "Anxiety taught me to plan for disaster. Depression told me the disaster had already happened. And somewhere between those two voices, I stopped being able to hear my own.",
-    "I went through the journals. The therapist offices. The mornings where getting up felt like a physical battle against gravity. I watched the people I loved struggle to understand why I was struggling. I smiled through things that were fracturing me. I built a life that looked fine from the outside and felt like survival from the inside.",
-    'And slowly — not all at once, and not forever — I started asking different questions. Not "why am I like this?" but "what am I avoiding knowing about myself?"',
-  ],
-
-  // ── WHY I BUILT THIS ──────────────────────────────────────────────────────
-  // Connect your story to why Mirror Within exists.
-  WHY_I_BUILT_THIS: [
-    "Mirror Within exists because I couldn't find a tool that trusted me. Every app I tried felt like it was trying to fix me, calm me down, or coach me into productivity. None of them wanted to sit in the hard question with me.",
-    'I wanted something that would ask the real thing. Not "how are you feeling today on a scale of 1–10?" but "what are you performing, and who taught you that performance was safer than truth?"',
-    "I built this for the version of me that needed it — and for anyone who recognizes themselves in that description. You don't need to be in crisis to use this. You just need to be willing to look.",
-  ],
-
-  // ── CLOSING QUOTE ─────────────────────────────────────────────────────────
-  // A closing reflection, quote, or message to the person reading.
-  CLOSING_QUOTE_LINE1:
-    '"You are not behind on your healing. You are exactly where the work begins."',
-  CLOSING_QUOTE_LINE2:
-    "Thank you for being here. Thank you for looking inward when everything in you wanted to look away. This app is yours now — use it honestly.",
-};
-
+// ─── CreatorScreen ────────────────────────────────────────────────────────────
 function CreatorScreen() {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45 }}
-      data-ocid="creator.section"
+      transition={{ duration: 0.35 }}
+      className="space-y-5"
     >
-      {/* Hero title block */}
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
+        initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0 }}
-        className="mb-6"
+        transition={{ duration: 0.45 }}
       >
-        <p
-          className="text-[12px] font-extrabold tracking-[2px] uppercase mb-3"
-          style={{ color: "#d9a6b7" }}
-        >
-          Behind the Eyes
-        </p>
         <h2
-          className="text-[30px] leading-[36px] font-extrabold font-display mb-3"
+          className="text-[24px] font-extrabold mb-2 font-display"
           style={{ color: "#fff4f8" }}
         >
           Behind the Eyes of the Creator
@@ -870,91 +689,76 @@ function CreatorScreen() {
         />
       </motion.div>
 
-      {/* Who I Am */}
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.08 }}
-      >
-        <Card>
-          <p
-            className="text-[11px] font-extrabold tracking-[1.8px] uppercase mb-3"
-            style={{ color: "#d9a6b7" }}
+      {[
+        {
+          label: "Who I Am",
+          title: "The person before the story",
+          paras: CREATOR_STORY.WHO_I_AM,
+        },
+        {
+          label: "My Battle",
+          title: "What I actually went through",
+          paras: CREATOR_STORY.MY_BATTLE,
+        },
+        {
+          label: "Why I Built This",
+          title: "The app I needed and couldn't find",
+          paras: CREATOR_STORY.WHY_I_BUILT_THIS,
+        },
+      ].map(({ label, title, paras }, i) => (
+        <motion.div
+          key={label}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: (i + 1) * 0.08 }}
+        >
+          <div
+            className="rounded-[24px] p-[18px] border"
+            style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
           >
-            Who I Am
-          </p>
-          <SectionTitle>The person before the story</SectionTitle>
-          {CREATOR_STORY.WHO_I_AM.map((para) => (
-            <BodyText key={para.slice(0, 24)}>{para}</BodyText>
-          ))}
-        </Card>
-      </motion.div>
+            <p
+              className="text-[11px] font-extrabold tracking-[1.8px] uppercase mb-3"
+              style={{ color: "#d9a6b7" }}
+            >
+              {label}
+            </p>
+            <h3
+              className="text-[18px] font-extrabold mb-3 font-display"
+              style={{ color: "#fff4f8" }}
+            >
+              {title}
+            </h3>
+            {paras.map((para) => (
+              <p
+                key={para.slice(0, 24)}
+                className="text-[15px] leading-[23px] mb-3"
+                style={{ color: "#dbc8cf" }}
+              >
+                {para}
+              </p>
+            ))}
+          </div>
+        </motion.div>
+      ))}
 
-      {/* My Battle */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.16 }}
-      >
-        <Card>
-          <p
-            className="text-[11px] font-extrabold tracking-[1.8px] uppercase mb-3"
-            style={{ color: "#d9a6b7" }}
-          >
-            My Battle
-          </p>
-          <SectionTitle>The honest version</SectionTitle>
-          {CREATOR_STORY.MY_BATTLE.map((para) => (
-            <BodyText key={para.slice(0, 24)}>{para}</BodyText>
-          ))}
-        </Card>
-      </motion.div>
-
-      {/* Why I Built This */}
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.24 }}
-      >
-        <Card>
-          <p
-            className="text-[11px] font-extrabold tracking-[1.8px] uppercase mb-3"
-            style={{ color: "#d9a6b7" }}
-          >
-            Why I Built This
-          </p>
-          <SectionTitle>The app I needed</SectionTitle>
-          {CREATOR_STORY.WHY_I_BUILT_THIS.map((para) => (
-            <BodyText key={para.slice(0, 24)}>{para}</BodyText>
-          ))}
-        </Card>
-      </motion.div>
-
-      {/* Closing quote — styled distinctly with a left-border accent */}
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.32 }}
+        transition={{ duration: 0.45, delay: 0.36 }}
       >
         <div
-          className="rounded-[24px] p-[18px] mb-4"
-          style={{
-            backgroundColor: "#1c1117",
-            borderLeft: "4px solid #efc1d0",
-            border: "1px solid #2e1e26",
-            borderLeftWidth: "4px",
-            borderLeftColor: "#efc1d0",
-          }}
+          className="rounded-[24px] p-[22px] border"
+          style={{ backgroundColor: "#1e1118", borderColor: "#76515e" }}
         >
           <p
-            className="text-[15px] leading-[25px] italic font-medium mb-3"
-            style={{ color: "#f4d6df" }}
+            className="text-[17px] leading-[28px] font-semibold italic mb-4"
+            style={{ color: "#f8e8ee" }}
           >
             {CREATOR_STORY.CLOSING_QUOTE_LINE1}
           </p>
           <p
-            className="text-[15px] leading-[25px]"
-            style={{ color: "#c8a8b4" }}
+            className="text-[14px] leading-[22px]"
+            style={{ color: "#d6c5cb" }}
           >
             {CREATOR_STORY.CLOSING_QUOTE_LINE2}
           </p>
@@ -964,462 +768,1548 @@ function CreatorScreen() {
   );
 }
 
-// ─── Screens ─────────────────────────────────────────────────────────────────
-function OnboardingScreen({ onBegin }: { onBegin: () => void }) {
-  const features = [
-    {
-      title: "Feeling check-ins",
-      text: "Start with what you feel, not what you think you should say.",
-    },
-    {
-      title: "Why you came here",
-      text: "Name the wound, the pattern, or the question that brought you in.",
-    },
-    {
-      title: "Shadow questions",
-      text: "Face the parts of yourself you perform, hide, reject, or fear.",
-    },
-    {
-      title: "Answer space",
-      text: "Write freely and save entries locally on the device for later reflection.",
-    },
-    {
-      title: "Crisis prompts",
-      text: "If crisis language appears, the app surfaces immediate help options and optional session-only location sharing.",
-    },
-  ];
-
+// ─── SupportScreen ────────────────────────────────────────────────────────────
+function SupportScreen({
+  crisisContent,
+  crisisCount,
+  locationLabel,
+  onRequestLocation,
+  onContinue,
+}: {
+  crisisContent: { title: string; body: string };
+  crisisCount: number;
+  locationLabel: string;
+  onRequestLocation: () => void;
+  onContinue: () => void;
+}) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
+      transition={{ duration: 0.35 }}
+      className="space-y-5"
     >
-      <div className="grid grid-cols-1 gap-3 mb-4">
-        {features.map((f) => (
-          <div
-            key={f.title}
-            className="rounded-[22px] p-4 border"
-            style={{ backgroundColor: "#20161b", borderColor: "#38262e" }}
-          >
-            <p
-              className="text-[17px] font-bold mb-2"
-              style={{ color: "#ffe8ef" }}
-            >
-              {f.title}
-            </p>
-            <p className="text-sm leading-[22px]" style={{ color: "#d7c4cb" }}>
-              {f.text}
-            </p>
-          </div>
-        ))}
+      <div
+        className="rounded-[24px] p-[18px] border"
+        style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
+      >
+        <h2
+          className="text-[22px] font-extrabold mb-3 font-display"
+          style={{ color: "#fff4f8" }}
+        >
+          Immediate support
+        </h2>
+        <p
+          className="text-[15px] leading-[23px] mb-4"
+          style={{ color: "#dbc8cf" }}
+        >
+          {crisisContent.body}
+        </p>
+        <a
+          href="tel:911"
+          className="block w-full text-center rounded-[18px] py-[14px] px-4 text-sm font-extrabold mt-3 transition-opacity hover:opacity-90"
+          style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+        >
+          Call emergency services
+        </a>
+        <a
+          href="tel:988"
+          className="block w-full text-center rounded-[18px] py-[14px] px-4 text-sm font-bold mt-2 border transition-opacity hover:opacity-80"
+          style={{
+            borderColor: "#76515e",
+            color: "#f4d6df",
+            backgroundColor: "transparent",
+          }}
+        >
+          Call or text 988
+        </a>
+        <button
+          type="button"
+          onClick={onRequestLocation}
+          className="block w-full text-center rounded-[18px] py-[14px] px-4 text-sm font-bold mt-2 border transition-opacity hover:opacity-80"
+          style={{
+            borderColor: "#76515e",
+            color: "#f4d6df",
+            backgroundColor: "transparent",
+          }}
+        >
+          Share live location for this session
+        </button>
+        <button
+          type="button"
+          onClick={onContinue}
+          className="block w-full text-center rounded-[18px] py-[14px] px-4 text-sm font-bold mt-2 border transition-opacity hover:opacity-80"
+          style={{
+            borderColor: "#76515e",
+            color: "#f4d6df",
+            backgroundColor: "transparent",
+          }}
+        >
+          Continue reflection
+        </button>
       </div>
-
-      <Card>
-        <SectionTitle>Transparent safety note</SectionTitle>
-        <BodyText>
-          This app is for guided introspection and journaling. It does not
-          replace emergency care or licensed mental health treatment. If you
-          mention suicide or self-harm, the app will show urgent support options
-          and offer voluntary session-only location sharing. It does not
-          secretly contact emergency services or force location access.
-        </BodyText>
-        <PrimaryButton onClick={onBegin} data-ocid="onboarding.primary_button">
-          Begin reflection
-        </PrimaryButton>
-      </Card>
-    </motion.div>
-  );
-}
-
-function CheckinScreen({
-  mood,
-  reason,
-  onMoodChange,
-  onReasonChange,
-  onNext,
-}: {
-  mood: string;
-  reason: string;
-  onMoodChange: (v: string) => void;
-  onReasonChange: (v: string) => void;
-  onNext: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
-      <Card>
-        <SectionTitle>Check-in</SectionTitle>
-        <FieldLabel>How are you feeling right now?</FieldLabel>
-        <SingleInput
-          value={mood}
-          onChange={onMoodChange}
-          placeholder="Heavy, numb, hopeful, angry, ashamed, restless..."
-          data-ocid="checkin.mood.input"
-        />
-        <FieldLabel>Why did you download this app?</FieldLabel>
-        <MultilineInput
-          value={reason}
-          onChange={onReasonChange}
-          placeholder="What are you trying to understand about yourself?"
-          data-ocid="checkin.reason.textarea"
-        />
-        <PrimaryButton onClick={onNext} data-ocid="checkin.primary_button">
-          Go deeper
-        </PrimaryButton>
-      </Card>
-    </motion.div>
-  );
-}
-
-function IntakeScreen({
-  prompts: intakePrompts,
-  answers,
-  onChange,
-  onNext,
-}: {
-  prompts: PromptItem[];
-  answers: Record<string, string>;
-  onChange: (id: string, val: string) => void;
-  onNext: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
-      <h2
-        className="text-[24px] font-extrabold mb-4 font-display"
-        style={{ color: "#fff4f8" }}
+      <div
+        className="rounded-[24px] p-[18px] border"
+        style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
       >
-        Intake prompts
-      </h2>
-      {intakePrompts.map((p) => (
-        <PromptCard
-          key={p.id}
-          prompt={p}
-          value={answers[p.id] || ""}
-          onChange={onChange}
-        />
-      ))}
-      <PrimaryButton onClick={onNext} data-ocid="intake.primary_button">
-        Continue to shadow work
-      </PrimaryButton>
-    </motion.div>
-  );
-}
-
-function ShadowScreen({
-  prompts: shadowPrompts,
-  answers,
-  onChange,
-  onNext,
-}: {
-  prompts: PromptItem[];
-  answers: Record<string, string>;
-  onChange: (id: string, val: string) => void;
-  onNext: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
-      <h2
-        className="text-[24px] font-extrabold mb-4 font-display"
-        style={{ color: "#fff4f8" }}
-      >
-        Shadow work
-      </h2>
-      {shadowPrompts.map((p) => (
-        <PromptCard
-          key={p.id}
-          prompt={p}
-          value={answers[p.id] || ""}
-          onChange={onChange}
-        />
-      ))}
-      <PrimaryButton onClick={onNext} data-ocid="shadow.primary_button">
-        Save and review
-      </PrimaryButton>
-    </motion.div>
-  );
-}
-
-function JournalScreen({
-  journalEntries,
-  onSave,
-  onViewInsights,
-  onDeleteAll,
-  onViewEntry,
-}: {
-  journalEntries: SavedEntry[];
-  onSave: () => void;
-  onViewInsights: () => void;
-  onDeleteAll: () => void;
-  onViewEntry: (entry: SavedEntry) => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
-      <Card>
-        <SectionTitle>Journal actions</SectionTitle>
-        <BodyText>
-          Save this reflection locally on the device so you can revisit patterns
-          later.
-        </BodyText>
-        <PrimaryButton onClick={onSave} data-ocid="journal.save_button">
-          Save entry locally
-        </PrimaryButton>
-        <SecondaryButton
-          onClick={onViewInsights}
-          data-ocid="journal.insights.secondary_button"
+        <h3
+          className="text-[18px] font-extrabold mb-3 font-display"
+          style={{ color: "#fff4f8" }}
         >
-          View insights
-        </SecondaryButton>
-      </Card>
-
-      <Card>
-        <SectionTitle>Saved entries</SectionTitle>
-        {journalEntries.length === 0 ? (
-          <p
-            className="text-sm"
-            style={{ color: "#dbc8cf" }}
-            data-ocid="journal.entries.empty_state"
-          >
-            No saved entries yet.
+          Support notes
+        </h3>
+        <div className="space-y-2">
+          {[
+            "This flow is transparent and consent-based.",
+            "It does not secretly contact emergency services.",
+            "Location is requested only if you choose to share it.",
+            "Replace 911 and 988 if you later localize this for another region.",
+          ].map((note) => (
+            <p
+              key={note}
+              className="text-sm leading-6"
+              style={{ color: "#dbc8cf" }}
+            >
+              • {note}
+            </p>
+          ))}
+        </div>
+        <div
+          className="mt-4 rounded-[18px] border p-4"
+          style={{ backgroundColor: "#2a1f24", borderColor: "#4a323c" }}
+        >
+          <p className="text-sm font-bold mb-1" style={{ color: "#f1d8df" }}>
+            Current session
           </p>
-        ) : (
-          <div data-ocid="journal.entries.list">
-            {journalEntries.map((entry, i) => (
-              <button
-                type="button"
-                key={entry.id}
-                data-ocid={`journal.entries.item.${i + 1}`}
-                onClick={() => onViewEntry(entry)}
-                className="w-full text-left pt-3 mt-3 border-t cursor-pointer rounded-[12px] px-2 transition-colors hover:bg-[#2b1e25] focus:outline-none"
-                style={{ borderColor: "#3d2932" }}
-              >
-                <p
-                  className="font-bold text-sm mb-1"
-                  style={{ color: "#f6dae3" }}
-                >
-                  {new Date(entry.createdAt).toLocaleString()}
-                </p>
-                <p className="text-sm mb-1" style={{ color: "#dbc8cf" }}>
-                  Mood: {entry.mood || "Not set"}
-                </p>
-                <p
-                  className="text-sm leading-[21px] line-clamp-2"
-                  style={{ color: "#cbb6bf" }}
-                >
-                  Why I came here: {entry.reason || "Not set"}
-                </p>
-                <p
-                  className="text-xs mt-1 font-semibold"
-                  style={{ color: "#a07080" }}
-                >
-                  Read full →
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
-        <SecondaryButton
-          onClick={onDeleteAll}
-          data-ocid="journal.delete_button"
-        >
-          Delete saved local entries
-        </SecondaryButton>
-      </Card>
+          <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
+            Crisis flags: {crisisCount}
+          </p>
+          <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
+            Location: {locationLabel}
+          </p>
+        </div>
+      </div>
     </motion.div>
   );
 }
 
-function InsightsScreen({
-  insights,
+// ─── BookJourney ──────────────────────────────────────────────────────────────
+function BookJourney({
+  step,
+  sharedName,
+  selectedPath,
+  selectedMode,
+  chapterIndex,
+  typedResponses,
+  savedChapters,
+  profile,
+  onSetStep,
+  onSetSharedName,
+  onSetSelectedPath,
+  onSetSelectedMode,
+  onSetChapterIndex,
+  onSetTypedResponses,
+  onSetSavedChapters,
+  onSetProfile,
+  onCrisisDetected,
+  feedbackEntries,
+  feedbackText,
+  onFeedbackChange,
+  onSubmitFeedback,
+  onClearAllData,
   crisisCount,
   locationLabel,
   onShareLocation,
   onEndSession,
-  journalEntries,
 }: {
-  insights: string[];
+  step: number;
+  sharedName: string;
+  selectedPath: string | null;
+  selectedMode: string | null;
+  chapterIndex: number;
+  typedResponses: Record<number, string>;
+  savedChapters: ChapterRecord[];
+  profile: PatternProfile;
+  onSetStep: (s: number) => void;
+  onSetSharedName: (v: string) => void;
+  onSetSelectedPath: (v: string | null) => void;
+  onSetSelectedMode: (v: string | null) => void;
+  onSetChapterIndex: (v: number) => void;
+  onSetTypedResponses: (
+    fn: (prev: Record<number, string>) => Record<number, string>,
+  ) => void;
+  onSetSavedChapters: (fn: (prev: ChapterRecord[]) => ChapterRecord[]) => void;
+  onSetProfile: (p: PatternProfile) => void;
+  onCrisisDetected: (text: string) => void;
+  feedbackEntries: FeedbackEntry[];
+  feedbackText: string;
+  onFeedbackChange: (v: string) => void;
+  onSubmitFeedback: () => void;
+  onClearAllData: () => void;
   crisisCount: number;
   locationLabel: string;
   onShareLocation: () => void;
   onEndSession: () => void;
-  journalEntries: SavedEntry[];
 }) {
-  const recentEntries = journalEntries.slice(0, 5);
+  const [listening, setListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [spokenTranscript, setSpokenTranscript] = useState("");
+  const recognitionRef = useRef<any>(null);
+
+  const activePath = useMemo(
+    () => entryPaths.find((item) => item.id === selectedPath) || null,
+    [selectedPath],
+  );
+
+  const activeQuestion = activePath?.questions?.[chapterIndex] ?? "";
+  const followups = selectedPath ? (followupsByPath[selectedPath] ?? []) : [];
+  const currentResponse =
+    selectedMode === "voice"
+      ? spokenTranscript
+      : (typedResponses[chapterIndex] ?? "");
+  const canAdvance = Boolean(currentResponse.trim());
+  const allChaptersDone = activePath
+    ? chapterIndex >= activePath.questions.length - 1
+    : false;
+
+  // Pattern detection for step 5
+  const detectedPatternIds = useMemo(
+    () => detectPatternIds(savedChapters.map((c) => c.response)),
+    [savedChapters],
+  );
+  const detectedPatterns = useMemo(
+    () => basePatterns.filter((p) => detectedPatternIds.includes(p.id)),
+    [detectedPatternIds],
+  );
+  const decision = useMemo(
+    () => pickNextRoute(detectedPatternIds, profile),
+    [detectedPatternIds, profile],
+  );
+  const nextQuestions = adaptiveQuestions[decision.action];
+
+  // Speech recognition setup
+  useEffect(() => {
+    const SpeechRecognition =
+      typeof window !== "undefined"
+        ? (window as any).SpeechRecognition ||
+          (window as any).webkitSpeechRecognition
+        : null;
+    if (!SpeechRecognition) return;
+    setVoiceSupported(true);
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        transcript += `${event.results[i][0].transcript} `;
+      }
+      const t = transcript.trim();
+      setSpokenTranscript(t);
+      onCrisisDetected(t);
+    };
+    recognition.onerror = () => {
+      setVoiceError(
+        "The mic got interrupted. This works best in Chrome-based browsers.",
+      );
+      setListening(false);
+    };
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    return () => recognition.stop();
+  }, [onCrisisDetected]);
+
+  function startListening() {
+    if (!recognitionRef.current) return;
+    setVoiceError("");
+    setListening(true);
+    recognitionRef.current.start();
+  }
+
+  function stopListening() {
+    if (!recognitionRef.current) return;
+    recognitionRef.current.stop();
+    setListening(false);
+  }
+
+  function handleTypedChange(val: string) {
+    onSetTypedResponses((prev) => ({ ...prev, [chapterIndex]: val }));
+    onCrisisDetected(val);
+  }
+
+  function saveAndAdvance() {
+    if (!activePath || !canAdvance) return;
+    const record: ChapterRecord = {
+      chapter: chapterIndex + 1,
+      question: activeQuestion,
+      response: currentResponse,
+      followups,
+      mode: selectedMode ?? "writing",
+    };
+    onSetSavedChapters((prev) => {
+      const next = [
+        ...prev.filter((item) => item.chapter !== record.chapter),
+        record,
+      ];
+      return next.sort((a, b) => a.chapter - b.chapter);
+    });
+    if (selectedMode === "voice") {
+      setSpokenTranscript("");
+      stopListening();
+    }
+    if (chapterIndex < activePath.questions.length - 1) {
+      onSetChapterIndex(chapterIndex + 1);
+    } else {
+      // Commit session to profile
+      const updated: PatternProfile = {
+        sessions: profile.sessions + 1,
+        counts: { ...profile.counts },
+      };
+      for (const id of detectedPatternIds) {
+        updated.counts[id] = (updated.counts[id] || 0) + 1;
+      }
+      onSetProfile(updated);
+      saveProfile(updated);
+      onSetStep(5);
+    }
+  }
+
+  const sidebarDisplay = {
+    name: sharedName || "Not chosen yet",
+    beginning: activePath?.label || "Not chosen yet",
+    style:
+      selectedMode === "voice"
+        ? "Your very own TedTalk"
+        : selectedMode === "writing"
+          ? "Hear ye Hear ye"
+          : "Not chosen yet",
+    progress:
+      step < 4 || !activePath
+        ? "Not started yet"
+        : `${Math.min(chapterIndex + 1, activePath.questions.length)} / ${
+            activePath.questions.length
+          }`,
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
-      <Card>
-        <SectionTitle>Recent moods</SectionTitle>
-        {recentEntries.length === 0 ? (
-          <p
-            className="text-sm"
-            style={{ color: "#dbc8cf" }}
-            data-ocid="insights.moods.empty_state"
+    <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+      {/* Main section */}
+      <section
+        className="rounded-[32px] border p-6 shadow-2xl md:p-8"
+        style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
+      >
+        {/* Step 1: Welcome / Shared name */}
+        {step === 1 && (
+          <motion.div
+            key="step1"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-6"
           >
-            No saved entries yet.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {recentEntries.map((entry) => (
-              <div key={entry.id} className="flex items-center gap-3">
-                <span
-                  className="rounded-full px-[11px] py-[6px] text-[13px] font-semibold border"
+            <div
+              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+              style={{
+                borderColor: "#4a323c",
+                backgroundColor: "#24181d",
+                color: "#f0d7df",
+              }}
+            >
+              <BookOpen className="mr-2 h-4 w-4" />
+              Welcome screen
+            </div>
+            <div>
+              <h2
+                className="text-3xl font-extrabold leading-tight font-display"
+                style={{ color: "#fff4f8" }}
+              >
+                Whose story are we reading today?
+              </h2>
+              <p
+                className="mt-3 max-w-2xl text-sm leading-7"
+                style={{ color: "#d5c4cb" }}
+              >
+                You do not have to use your real name. Choose the name you want
+                this story to be held under.
+              </p>
+            </div>
+            <div
+              className="rounded-[28px] border p-5"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+            >
+              <label
+                htmlFor="shared-name-input"
+                className="block text-sm font-bold"
+                style={{ color: "#f1d8df" }}
+              >
+                Shared name
+              </label>
+              <input
+                id="shared-name-input"
+                value={sharedName}
+                onChange={(e) => onSetSharedName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && sharedName.trim()) onSetStep(2);
+                }}
+                placeholder="K, The version of me today, Unbothered..."
+                data-ocid="journey.shared_name.input"
+                className="mt-3 w-full rounded-2xl border px-4 py-3 text-white outline-none"
+                style={{
+                  borderColor: "#4a323c",
+                  backgroundColor: "#2b2025",
+                }}
+              />
+              <p
+                className="mt-3 text-xs leading-6"
+                style={{ color: "#bfa9b2" }}
+              >
+                Examples: K, The version of me today, Unbothered, Soft Girl,
+                Main Character.
+              </p>
+            </div>
+            <button
+              type="button"
+              data-ocid="journey.step1.primary_button"
+              onClick={() => sharedName.trim() && onSetStep(2)}
+              disabled={!sharedName.trim()}
+              className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+            >
+              Turn the page
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </button>
+          </motion.div>
+        )}
+
+        {/* Step 2: Entry intensity */}
+        {step === 2 && (
+          <motion.div
+            key="step2"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-6"
+          >
+            <div
+              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+              style={{
+                borderColor: "#4a323c",
+                backgroundColor: "#24181d",
+                color: "#f0d7df",
+              }}
+            >
+              <BookOpen className="mr-2 h-4 w-4" />
+              Entry intensity
+            </div>
+            <div>
+              <h2
+                className="text-3xl font-extrabold leading-tight font-display"
+                style={{ color: "#fff4f8" }}
+              >
+                Where does the story begin, {sharedName}?
+              </h2>
+              <p
+                className="mt-3 max-w-2xl text-sm leading-7"
+                style={{ color: "#d5c4cb" }}
+              >
+                Start where you can handle. You can always peel deeper later.
+              </p>
+            </div>
+            <div className="grid gap-4">
+              {entryPaths.map((path) => (
+                <PathPreview
+                  key={path.id}
+                  path={path}
+                  selected={selectedPath === path.id}
+                  onClick={() => onSetSelectedPath(path.id)}
+                />
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                data-ocid="journey.step2.cancel_button"
+                onClick={() => onSetStep(1)}
+                className="rounded-2xl border px-5 py-3 font-bold transition hover:opacity-80"
+                style={{
+                  borderColor: "#76515e",
+                  color: "#f4d6df",
+                  backgroundColor: "transparent",
+                }}
+              >
+                Previous page
+              </button>
+              <button
+                type="button"
+                data-ocid="journey.step2.primary_button"
+                onClick={() => selectedPath && onSetStep(3)}
+                disabled={!selectedPath}
+                className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+              >
+                Peel deeper
+                <ChevronRight className="ml-2 h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 3: Expression method */}
+        {step === 3 && (
+          <motion.div
+            key="step3"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-6"
+          >
+            <div
+              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+              style={{
+                borderColor: "#4a323c",
+                backgroundColor: "#24181d",
+                color: "#f0d7df",
+              }}
+            >
+              <Feather className="mr-2 h-4 w-4" />
+              Expression method
+            </div>
+            <div>
+              <h2
+                className="text-3xl font-extrabold leading-tight font-display"
+                style={{ color: "#fff4f8" }}
+              >
+                How would you like to tell it?
+              </h2>
+              <p
+                className="mt-3 max-w-2xl text-sm leading-7"
+                style={{ color: "#d5c4cb" }}
+              >
+                You chose{" "}
+                <span className="font-bold" style={{ color: "#efc1d0" }}>
+                  {activePath?.label}
+                </span>
+                . Now choose whether this chapter is spoken or written.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                {
+                  id: "voice",
+                  icon: <Mic className="h-6 w-6" />,
+                  title: "Your very own TedTalk",
+                  subtitle: "Speak it out",
+                  desc: "For when typing feels like too much work and your truth comes out easier when you hear yourself say it.",
+                },
+                {
+                  id: "writing",
+                  icon: <PenTool className="h-6 w-6" />,
+                  title: "Hear ye Hear ye",
+                  subtitle: "Write it down",
+                  desc: "For when you want to shape the thought, slow it down, and let the page hold the weight.",
+                },
+              ].map((mode) => (
+                <button
+                  type="button"
+                  key={mode.id}
+                  data-ocid={`journey.mode_${mode.id}.toggle`}
+                  onClick={() => onSetSelectedMode(mode.id)}
+                  className="rounded-[28px] border p-6 text-left transition"
                   style={{
-                    backgroundColor: "#2b2025",
-                    color: "#f1d8df",
-                    borderColor: "#4a323c",
-                    whiteSpace: "nowrap",
+                    borderColor:
+                      selectedMode === mode.id ? "#efc1d0" : "#3d2a32",
+                    backgroundColor:
+                      selectedMode === mode.id ? "#2a1d23" : "#24181d",
                   }}
                 >
-                  {entry.mood || "—"}
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="rounded-2xl p-3"
+                      style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
+                    >
+                      {mode.icon}
+                    </div>
+                    <div>
+                      <p
+                        className="text-xl font-extrabold"
+                        style={{ color: "#fff4f8" }}
+                      >
+                        {mode.title}
+                      </p>
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: "#efc1d0" }}
+                      >
+                        {mode.subtitle}
+                      </p>
+                    </div>
+                  </div>
+                  <p
+                    className="mt-4 text-sm leading-6"
+                    style={{ color: "#d5c4cb" }}
+                  >
+                    {mode.desc}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                data-ocid="journey.step3.cancel_button"
+                onClick={() => onSetStep(2)}
+                className="rounded-2xl border px-5 py-3 font-bold transition hover:opacity-80"
+                style={{
+                  borderColor: "#76515e",
+                  color: "#f4d6df",
+                  backgroundColor: "transparent",
+                }}
+              >
+                Previous page
+              </button>
+              <button
+                type="button"
+                data-ocid="journey.step3.primary_button"
+                disabled={!selectedMode}
+                onClick={() => selectedMode && onSetStep(4)}
+                className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+              >
+                Continue to chapter one
+                <ChevronRight className="ml-2 h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 4: Chapter reflection */}
+        {step === 4 && activePath && (
+          <motion.div
+            key={`step4-${chapterIndex}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-6"
+          >
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                data-ocid="journey.step4.cancel_button"
+                onClick={() => onSetStep(3)}
+                className="rounded-full border p-2 transition hover:opacity-80"
+                style={{
+                  borderColor: "#4a323c",
+                  backgroundColor: "#24181d",
+                  color: "#f0d7df",
+                }}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+              <div
+                className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+                style={{
+                  borderColor: "#4a323c",
+                  backgroundColor: "#24181d",
+                  color: "#f0d7df",
+                }}
+              >
+                <BookOpen className="mr-2 h-4 w-4" />
+                {activePath.chapterTitle}
+              </div>
+            </div>
+            <div>
+              <p
+                className="text-sm font-semibold uppercase tracking-[0.2em]"
+                style={{ color: "#d9a6b7" }}
+              >
+                Chapter {chapterIndex + 1} of {activePath.questions.length}
+              </p>
+              <h2
+                className="mt-2 text-3xl font-extrabold leading-tight font-display"
+                style={{ color: "#fff4f8" }}
+              >
+                {activeQuestion}
+              </h2>
+              <p
+                className="mt-3 max-w-2xl text-sm leading-7"
+                style={{ color: "#d5c4cb" }}
+              >
+                {selectedMode === "voice"
+                  ? `${sharedName}, say it out loud first. Let it be messy before it is meaningful.`
+                  : `${sharedName}, write like no one is grading this. Let the sentence land before you edit it.`}
+              </p>
+            </div>
+
+            {selectedMode === "voice" ? (
+              <div
+                className="rounded-[28px] border p-5"
+                style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="rounded-2xl p-3"
+                      style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
+                    >
+                      <Mic className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p
+                        className="text-xl font-extrabold"
+                        style={{ color: "#fff4f8" }}
+                      >
+                        Your very own TedTalk
+                      </p>
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: "#efc1d0" }}
+                      >
+                        Live voice capture
+                      </p>
+                    </div>
+                  </div>
+                  {voiceSupported &&
+                    (!listening ? (
+                      <button
+                        type="button"
+                        data-ocid="journey.mic.primary_button"
+                        onClick={startListening}
+                        className="inline-flex items-center rounded-2xl px-4 py-3 font-extrabold transition hover:opacity-90"
+                        style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+                      >
+                        <PlayCircle className="mr-2 h-4 w-4" />
+                        Start mic
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        data-ocid="journey.mic.stop.button"
+                        onClick={stopListening}
+                        className="inline-flex items-center rounded-2xl px-4 py-3 font-extrabold"
+                        style={{ backgroundColor: "#ff6b8a", color: "#fff" }}
+                      >
+                        <PauseCircle className="mr-2 h-4 w-4" />
+                        Stop mic
+                      </button>
+                    ))}
+                </div>
+                {!voiceSupported && (
+                  <div
+                    className="mt-4 rounded-2xl border p-4 text-sm leading-6"
+                    style={{
+                      borderColor: "#7a3b4c",
+                      backgroundColor: "#3a1f28",
+                      color: "#ffd9e2",
+                    }}
+                    data-ocid="journey.voice.error_state"
+                  >
+                    Voice capture is not available in this browser. Chrome
+                    usually works best.
+                  </div>
+                )}
+                {voiceError && (
+                  <div
+                    className="mt-4 rounded-2xl border p-4 text-sm leading-6"
+                    style={{
+                      borderColor: "#7a3b4c",
+                      backgroundColor: "#3a1f28",
+                      color: "#ffd9e2",
+                    }}
+                    data-ocid="journey.voice.error_state"
+                  >
+                    {voiceError}
+                  </div>
+                )}
+                <div
+                  className="mt-5 rounded-2xl border p-4"
+                  style={{ borderColor: "#4a323c", backgroundColor: "#2b2025" }}
+                >
+                  <p className="text-sm font-bold" style={{ color: "#f1d8df" }}>
+                    Transcript
+                  </p>
+                  <p
+                    className="mt-3 min-h-[180px] whitespace-pre-wrap text-sm leading-6"
+                    style={{ color: "#dbc8cf" }}
+                  >
+                    {spokenTranscript ||
+                      "Start speaking and your words will appear here."}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div
+                className="rounded-[28px] border p-5"
+                style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="rounded-2xl p-3"
+                    style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
+                  >
+                    <PenTool className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p
+                      className="text-xl font-extrabold"
+                      style={{ color: "#fff4f8" }}
+                    >
+                      Hear ye Hear ye
+                    </p>
+                    <p
+                      className="text-sm font-semibold"
+                      style={{ color: "#efc1d0" }}
+                    >
+                      Chapter response
+                    </p>
+                  </div>
+                </div>
+                <textarea
+                  data-ocid="journey.chapter.textarea"
+                  value={typedResponses[chapterIndex] ?? ""}
+                  onChange={(e) => handleTypedChange(e.target.value)}
+                  placeholder="Write the first honest version, not the polished one."
+                  className="mt-5 min-h-[220px] w-full rounded-2xl border px-4 py-3 text-white outline-none"
+                  style={{
+                    borderColor: "#4a323c",
+                    backgroundColor: "#2b2025",
+                  }}
+                />
+              </div>
+            )}
+
+            {currentResponse.trim() && (
+              <div
+                className="rounded-[28px] border p-5"
+                style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+              >
+                <p
+                  className="text-sm font-bold uppercase tracking-[0.2em]"
+                  style={{ color: "#d9a6b7" }}
+                >
+                  Peel deeper
+                </p>
+                <div className="mt-4 space-y-3">
+                  {followups.map((item) => (
+                    <div
+                      key={item}
+                      className="rounded-2xl p-4 text-sm leading-6"
+                      style={{ backgroundColor: "#2b2025", color: "#dbc8cf" }}
+                    >
+                      • {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                data-ocid="journey.chapter.primary_button"
+                disabled={!canAdvance}
+                onClick={saveAndAdvance}
+                className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+              >
+                {allChaptersDone ? "Finish chapter" : "Next page"}
+                <ChevronRight className="ml-2 h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 5: End of chapter recap */}
+        {step === 5 && activePath && (
+          <motion.div
+            key="step5"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-6"
+          >
+            <div
+              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+              style={{
+                borderColor: "#4a323c",
+                backgroundColor: "#24181d",
+                color: "#f0d7df",
+              }}
+            >
+              <BookOpen className="mr-2 h-4 w-4" />
+              End of chapter
+            </div>
+            <div>
+              <h2
+                className="text-3xl font-extrabold leading-tight font-display"
+                style={{ color: "#fff4f8" }}
+              >
+                You made it through the first layer, {sharedName}.
+              </h2>
+              <p
+                className="mt-3 max-w-2xl text-sm leading-7"
+                style={{ color: "#d5c4cb" }}
+              >
+                This chapter stayed in{" "}
+                <span className="font-bold" style={{ color: "#efc1d0" }}>
+                  {activePath.label}
                 </span>
-                <span className="text-xs" style={{ color: "#8d7d84" }}>
-                  {new Date(entry.createdAt).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </span>
+                . Here's what got said out loud.
+              </p>
+            </div>
+
+            {/* Chapter recap */}
+            <div className="space-y-4" data-ocid="journey.chapters.list">
+              {savedChapters.length === 0 ? (
+                <div
+                  className="rounded-[28px] border p-5 text-sm"
+                  style={{
+                    borderColor: "#3d2a32",
+                    backgroundColor: "#24181d",
+                    color: "#dbc8cf",
+                  }}
+                  data-ocid="journey.chapters.empty_state"
+                >
+                  No responses saved yet.
+                </div>
+              ) : (
+                savedChapters.map((item, i) => (
+                  <div
+                    key={item.chapter}
+                    className="rounded-[28px] border p-5"
+                    style={{
+                      borderColor: "#3d2a32",
+                      backgroundColor: "#24181d",
+                    }}
+                    data-ocid={`journey.chapters.item.${i + 1}`}
+                  >
+                    <p
+                      className="text-sm font-bold uppercase tracking-[0.2em]"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      Chapter {item.chapter}
+                    </p>
+                    <p
+                      className="mt-3 text-lg font-extrabold font-display"
+                      style={{ color: "#fff4f8" }}
+                    >
+                      {item.question}
+                    </p>
+                    <p
+                      className="mt-3 whitespace-pre-wrap text-sm leading-7"
+                      style={{ color: "#dbc8cf" }}
+                    >
+                      {item.response}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Pattern detection */}
+            <div
+              className="rounded-[28px] border p-5"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+            >
+              <p
+                className="text-sm font-bold uppercase tracking-[0.2em] mb-4"
+                style={{ color: "#d9a6b7" }}
+              >
+                Pattern reveal
+              </p>
+              {detectedPatterns.length === 0 ? (
+                <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
+                  No strong pattern detected yet. Keep going.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {detectedPatterns.map((p) => (
+                    <div
+                      key={p.id}
+                      className="rounded-2xl p-4"
+                      style={{ backgroundColor: "#2b2025" }}
+                    >
+                      <p className="font-bold" style={{ color: "#f6dae3" }}>
+                        {p.name}
+                      </p>
+                      <p
+                        className="mt-1 text-sm leading-6"
+                        style={{ color: "#dbc8cf" }}
+                      >
+                        {p.advice}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Adaptive next step */}
+            <div
+              className="rounded-[28px] border p-5"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="h-4 w-4" style={{ color: "#efc1d0" }} />
+                <p
+                  className="text-sm font-bold uppercase tracking-[0.2em]"
+                  style={{ color: "#d9a6b7" }}
+                >
+                  Adaptive next step
+                </p>
+              </div>
+              <div
+                className="rounded-2xl p-4 mb-4"
+                style={{ backgroundColor: "#2b2025" }}
+              >
+                <p
+                  className="font-bold capitalize"
+                  style={{ color: "#fff4f8" }}
+                >
+                  {decision.action === "deepen"
+                    ? "Go deeper"
+                    : decision.action === "shift"
+                      ? "Shift the lens"
+                      : "Stay in this layer"}
+                </p>
+                <p className="text-sm mt-1" style={{ color: "#dbc8cf" }}>
+                  {decision.reason}
+                </p>
+                {decision.focus && (
+                  <p
+                    className="text-xs mt-2 font-semibold"
+                    style={{ color: "#d9a6b7" }}
+                  >
+                    Focus: {decision.focus}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-3">
+                {nextQuestions.map((q) => (
+                  <div
+                    key={q}
+                    className="rounded-2xl p-4 text-sm leading-6"
+                    style={{ backgroundColor: "#2b2025", color: "#dbc8cf" }}
+                  >
+                    • {q}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Profile */}
+            {profile.sessions > 0 && (
+              <div
+                className="rounded-[28px] border p-5"
+                style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
+              >
+                <p
+                  className="text-sm font-bold uppercase tracking-[0.2em] mb-3"
+                  style={{ color: "#d9a6b7" }}
+                >
+                  Your pattern profile
+                </p>
+                <p className="text-xs mb-2" style={{ color: "#bfa9b2" }}>
+                  Sessions: {profile.sessions}
+                </p>
+                {Object.entries(profile.counts).length > 0 && (
+                  <div className="space-y-2">
+                    {Object.entries(profile.counts).map(([k, v]) => (
+                      <div
+                        key={k}
+                        className="flex items-center justify-between"
+                      >
+                        <span
+                          className="text-sm capitalize"
+                          style={{ color: "#dbc8cf" }}
+                        >
+                          {k}
+                        </span>
+                        <span
+                          className="text-xs font-bold rounded-full px-2 py-0.5"
+                          style={{
+                            backgroundColor: "#2b2025",
+                            color: "#efc1d0",
+                          }}
+                        >
+                          {v}×
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Feedback */}
+            <div
+              className="rounded-[28px] border p-5"
+              style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
+            >
+              <p
+                className="text-[18px] font-extrabold mb-2 font-display"
+                style={{ color: "#fff4f8" }}
+              >
+                Feedback
+              </p>
+              <p className="text-sm mb-3" style={{ color: "#dbc8cf" }}>
+                What felt missing or impactful?
+              </p>
+              <textarea
+                data-ocid="journey.feedback.textarea"
+                value={feedbackText}
+                onChange={(e) => onFeedbackChange(e.target.value)}
+                placeholder="Your feedback helps shape this app"
+                rows={4}
+                className="w-full rounded-[18px] px-4 py-3 text-sm border outline-none"
+                style={{
+                  backgroundColor: "#2b2025",
+                  borderColor: "#4a323c",
+                  color: "#fff",
+                }}
+              />
+              <button
+                type="button"
+                data-ocid="journey.feedback.submit_button"
+                onClick={onSubmitFeedback}
+                className="mt-3 inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90"
+                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+              >
+                Submit feedback
+              </button>
+              {feedbackEntries.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  {feedbackEntries.slice(0, 3).map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-[18px] p-4"
+                      style={{ backgroundColor: "#2b2025" }}
+                    >
+                      <p
+                        className="text-xs font-bold uppercase tracking-wide mb-1"
+                        style={{ color: "#d9a6b7" }}
+                      >
+                        {entry.userName} ·{" "}
+                        {new Date(entry.createdAt).toLocaleDateString()}
+                      </p>
+                      <p
+                        className="text-sm leading-6"
+                        style={{ color: "#dbc8cf" }}
+                      >
+                        {entry.message}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Session safety */}
+            <div
+              className="rounded-[28px] border p-5"
+              style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
+            >
+              <p
+                className="text-[18px] font-extrabold mb-2 font-display"
+                style={{ color: "#fff4f8" }}
+              >
+                Session safety
+              </p>
+              <p className="text-sm mb-1" style={{ color: "#dbc8cf" }}>
+                Crisis flags this session: {crisisCount}
+              </p>
+              <p className="text-sm mb-3" style={{ color: "#dbc8cf" }}>
+                Location: {locationLabel}
+              </p>
+              <button
+                type="button"
+                data-ocid="journey.location.button"
+                onClick={onShareLocation}
+                className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80 mb-2"
+                style={{
+                  borderColor: "#76515e",
+                  color: "#f4d6df",
+                  backgroundColor: "transparent",
+                }}
+              >
+                Share live location for this session
+              </button>
+              <button
+                type="button"
+                data-ocid="journey.end_session.button"
+                onClick={onEndSession}
+                className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80 mb-2"
+                style={{
+                  borderColor: "#76515e",
+                  color: "#f4d6df",
+                  backgroundColor: "transparent",
+                }}
+              >
+                End session and clear session-only data
+              </button>
+              <button
+                type="button"
+                data-ocid="journey.clear_data.delete_button"
+                onClick={onClearAllData}
+                className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80"
+                style={{
+                  borderColor: "#76515e",
+                  color: "#f4d6df",
+                  backgroundColor: "transparent",
+                }}
+              >
+                Clear all local data
+              </button>
+            </div>
+
+            <button
+              type="button"
+              data-ocid="journey.step5.primary_button"
+              onClick={() => {
+                onSetChapterIndex(0);
+                onSetSavedChapters(() => []);
+                onSetTypedResponses(() => ({}));
+                onSetStep(4);
+              }}
+              className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90"
+              style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+            >
+              Read it again
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </button>
+          </motion.div>
+        )}
+      </section>
+
+      {/* Sidebar */}
+      <aside className="space-y-6">
+        <div
+          className="rounded-[32px] border p-6 shadow-2xl"
+          style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
+        >
+          <h3
+            className="text-xl font-extrabold font-display mb-4"
+            style={{ color: "#fff4f8" }}
+          >
+            Current selections
+          </h3>
+          <div className="space-y-3">
+            {[
+              { label: "Shared name", value: sidebarDisplay.name },
+              { label: "Story beginning", value: sidebarDisplay.beginning },
+              { label: "Expression style", value: sidebarDisplay.style },
+              { label: "Chapter progress", value: sidebarDisplay.progress },
+            ].map(({ label, value }) => (
+              <div
+                key={label}
+                className="rounded-2xl p-4"
+                style={{ backgroundColor: "#24181d" }}
+              >
+                <p
+                  className="text-xs font-bold uppercase tracking-wide"
+                  style={{ color: "#d9a6b7" }}
+                >
+                  {label}
+                </p>
+                <p
+                  className="mt-2 text-sm leading-6"
+                  style={{ color: "#f6dae3" }}
+                >
+                  {value}
+                </p>
               </div>
             ))}
           </div>
-        )}
-      </Card>
+        </div>
 
-      <Card>
-        <SectionTitle>Reflection insights</SectionTitle>
-        <BodyText>
-          These are simple pattern prompts based on what you wrote. They are not
-          diagnoses.
-        </BodyText>
-        {insights.map((item, i) => (
+        {profile.sessions > 0 && (
           <div
-            key={item.slice(0, 30)}
-            data-ocid={`insights.item.${i + 1}`}
-            className="rounded-[18px] p-[14px] mb-3"
-            style={{ backgroundColor: "#2b2025" }}
+            className="rounded-[32px] border p-6 shadow-2xl"
+            style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
           >
-            <p className="text-sm leading-[22px]" style={{ color: "#f8e8ee" }}>
-              {item}
+            <h3
+              className="text-xl font-extrabold font-display mb-3"
+              style={{ color: "#fff4f8" }}
+            >
+              Pattern profile
+            </h3>
+            <p className="text-xs mb-3" style={{ color: "#bfa9b2" }}>
+              {profile.sessions} session{profile.sessions !== 1 ? "s" : ""}{" "}
+              completed
             </p>
+            {Object.entries(profile.counts).length > 0 ? (
+              <div className="space-y-2">
+                {Object.entries(profile.counts).map(([k, v]) => (
+                  <div
+                    key={k}
+                    className="flex items-center justify-between rounded-2xl px-3 py-2"
+                    style={{ backgroundColor: "#24181d" }}
+                  >
+                    <span
+                      className="text-sm capitalize"
+                      style={{ color: "#dbc8cf" }}
+                    >
+                      {k}
+                    </span>
+                    <span
+                      className="text-xs font-bold rounded-full px-2 py-0.5"
+                      style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
+                    >
+                      {v}×
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm" style={{ color: "#dbc8cf" }}>
+                No patterns recorded yet.
+              </p>
+            )}
           </div>
-        ))}
-      </Card>
+        )}
 
-      <Card>
-        <SectionTitle>Session safety</SectionTitle>
-        <BodyText>Crisis flags this session: {crisisCount}</BodyText>
-        <BodyText>Location status: {locationLabel}</BodyText>
-        <SecondaryButton
-          onClick={onShareLocation}
-          data-ocid="insights.location.secondary_button"
+        <div
+          className="rounded-[32px] border p-6 shadow-2xl"
+          style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
         >
-          Share live location for this session
-        </SecondaryButton>
-        <SecondaryButton
-          onClick={onEndSession}
-          data-ocid="insights.endsession.secondary_button"
-        >
-          End session and clear session-only data
-        </SecondaryButton>
-      </Card>
-    </motion.div>
-  );
-}
-
-function ResourcesScreen({ onShareLocation }: { onShareLocation: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
-      <Card>
-        <SectionTitle>Crisis resources</SectionTitle>
-        <BodyText>
-          If there is immediate danger, call emergency services right now or go
-          to the nearest emergency department. Do not rely on journaling alone
-          in an active crisis.
-        </BodyText>
-
-        <a
-          href="tel:988"
-          className="block"
-          data-ocid="resources.call988.primary_button"
-        >
-          <button
-            type="button"
-            className="w-full rounded-[18px] py-4 px-4 text-sm font-extrabold mt-1 transition-opacity hover:opacity-90"
-            style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+          <h3
+            className="text-xl font-extrabold font-display mb-3"
+            style={{ color: "#fff4f8" }}
           >
-            Call or text 988
-          </button>
-        </a>
-
-        <SecondaryButton
-          onClick={onShareLocation}
-          data-ocid="resources.location.secondary_button"
-        >
-          Share live location for this session
-        </SecondaryButton>
-
-        <p className="text-xs mt-3 leading-5" style={{ color: "#b89ca7" }}>
-          Replace the hotline button and crisis copy with the right local
-          resources for the region where you launch the app.
-        </p>
-      </Card>
-    </motion.div>
+            Why this layout works
+          </h3>
+          <ul
+            className="space-y-3 text-sm leading-6"
+            style={{ color: "#d5c4cb" }}
+          >
+            <li>• Avoidant users are not hit with every tool at once.</li>
+            <li>• Deeper users still get a clear path inward.</li>
+            <li>• The experience feels like unfolding, not confronting.</li>
+            <li>• Story language makes reflection feel less clinical.</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
   );
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("onboarding");
+  const [hydrated, setHydrated] = useState(false);
+  const [screen, setScreen] = useState<Screen>("journey");
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [accessInput, setAccessInput] = useState("");
+  const [userName, setUserName] = useState<string>("");
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
+  const [sessionCountdown, setSessionCountdown] = useState(SESSION_TIMEOUT_MS);
   const [breatheReturnScreen, setBreatheReturnScreen] =
-    useState<Screen>("checkin");
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [mood, setMood] = useState("");
-  const [reason, setReason] = useState("");
-  const [journalEntries, setJournalEntries] = useState<SavedEntry[]>(() =>
-    loadFromStorage(),
+    useState<Screen>("journey");
+
+  // Journey state
+  const [journeyStep, setJourneyStep] = useState(1);
+  const [sharedName, setSharedName] = useState("");
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [chapterIndex, setChapterIndex] = useState(0);
+  const [typedResponses, setTypedResponses] = useState<Record<number, string>>(
+    {},
   );
+  const [savedChapters, setSavedChapters] = useState<ChapterRecord[]>([]);
+  const [profile, setProfile] = useState<PatternProfile>({
+    counts: {},
+    sessions: 0,
+  });
+
+  // Crisis
   const [crisisCount, setCrisisCount] = useState(0);
+  const [crisisActive, setCrisisActive] = useState(false);
+  const [crisisSeverity, setCrisisSeverity] = useState<
+    "high" | "medium" | "low" | null
+  >(null);
+  const [showCrisisModal, setShowCrisisModal] = useState(false);
   const [locationLabel, setLocationLabel] = useState(
     "Not shared in this session",
   );
-  const [showCrisisModal, setShowCrisisModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [savedMsg, setSavedMsg] = useState(false);
-  const [selectedEntry, setSelectedEntry] = useState<SavedEntry | null>(null);
 
-  const intakePrompts = useMemo(
-    () => prompts.filter((p) => p.category === "intake"),
-    [],
-  );
-  const shadowPrompts = useMemo(
-    () => prompts.filter((p) => p.category === "shadow"),
-    [],
-  );
-  const insights = useMemo(() => buildInsight(answers), [answers]);
+  // Feedback
+  const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
+  const [feedbackText, setFeedbackText] = useState("");
 
+  // Modals
+  const [showClearDataModal, setShowClearDataModal] = useState(false);
+
+  const crisisContent = useMemo(
+    () => severityCopy(crisisSeverity),
+    [crisisSeverity],
+  );
+
+  // ── Hydration ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    hydrateApp();
+  }, []);
+
+  function hydrateApp() {
+    const parsedDraft = safeJsonParse<JourneyDraft | null>(
+      localStorage.getItem(DRAFT_KEY),
+      null,
+    );
+    const parsedSession = safeJsonParse<{
+      userName: string;
+      sessionExpiresAt: number;
+    } | null>(localStorage.getItem(SESSION_KEY), null);
+    const parsedFeedback = safeJsonParse<FeedbackEntry[]>(
+      localStorage.getItem(FEEDBACK_KEY),
+      [],
+    );
+    const parsedProfile = loadProfile();
+
+    setFeedbackEntries(Array.isArray(parsedFeedback) ? parsedFeedback : []);
+    setProfile(parsedProfile);
+
+    if (parsedDraft && typeof parsedDraft === "object") {
+      setJourneyStep(parsedDraft.step || 1);
+      setSharedName(parsedDraft.sharedName || "");
+      setSelectedPath(parsedDraft.selectedPath || null);
+      setSelectedMode(parsedDraft.selectedMode || null);
+      setChapterIndex(parsedDraft.chapterIndex || 0);
+      setTypedResponses(parsedDraft.typedResponses || {});
+    }
+
+    if (parsedSession && parsedSession.sessionExpiresAt > Date.now()) {
+      setUserName(parsedSession.userName || "");
+      setIsUnlocked(true);
+      setSessionExpiresAt(parsedSession.sessionExpiresAt);
+      setSessionCountdown(parsedSession.sessionExpiresAt - Date.now());
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+
+    setHydrated(true);
+  }
+
+  // ── Draft autosave ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!hydrated || !isUnlocked) return;
+    const draft: JourneyDraft = {
+      step: journeyStep,
+      sharedName,
+      selectedPath,
+      selectedMode,
+      chapterIndex,
+      typedResponses,
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  }, [
+    journeyStep,
+    sharedName,
+    selectedPath,
+    selectedMode,
+    chapterIndex,
+    typedResponses,
+    hydrated,
+    isUnlocked,
+  ]);
+
+  // ── Session countdown ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isUnlocked || !sessionExpiresAt) return;
+    const interval = window.setInterval(() => {
+      const remaining = sessionExpiresAt - Date.now();
+      setSessionCountdown(Math.max(0, remaining));
+      if (remaining <= 0) {
+        lockApp();
+      }
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [isUnlocked, sessionExpiresAt]);
+
+  useEffect(() => {
+    document.title = "Mirror Within — Self-Inquiry Journal";
+  }, []);
+
+  // ── Session helpers ───────────────────────────────────────────────────────────
+  function refreshSessionTimer(currentUserName?: string) {
+    const nextExpiry = Date.now() + SESSION_TIMEOUT_MS;
+    const nextUser = currentUserName || userName;
+    setSessionExpiresAt(nextExpiry);
+    setSessionCountdown(SESSION_TIMEOUT_MS);
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ userName: nextUser, sessionExpiresAt: nextExpiry }),
+    );
+  }
+
+  function lockApp() {
+    setIsUnlocked(false);
+    setShowWelcome(false);
+    setSessionExpiresAt(null);
+    localStorage.removeItem(SESSION_KEY);
+  }
+
+  function clearSession() {
+    lockApp();
+  }
+
+  function clearAllLocalData() {
+    setShowClearDataModal(true);
+  }
+
+  function confirmClearAllData() {
+    for (const key of [DRAFT_KEY, SESSION_KEY, FEEDBACK_KEY, PROFILE_KEY]) {
+      localStorage.removeItem(key);
+    }
+    setFeedbackEntries([]);
+    setFeedbackText("");
+    setProfile({ counts: {}, sessions: 0 });
+    setJourneyStep(1);
+    setSharedName("");
+    setSelectedPath(null);
+    setSelectedMode(null);
+    setChapterIndex(0);
+    setTypedResponses({});
+    setSavedChapters([]);
+    setShowClearDataModal(false);
+    lockApp();
+  }
+
+  // ── Crisis detection ──────────────────────────────────────────────────────────
+  function handleCrisisDetected(text: string) {
+    if (!hasCrisisLanguage(text)) return;
+    const severity = getCrisisSeverity(text);
+    setCrisisSeverity(severity);
+    setCrisisActive(true);
+    setCrisisCount((prev) => prev + 1);
+    setShowCrisisModal(true);
+    refreshSessionTimer();
+  }
+
+  // ── Feedback ──────────────────────────────────────────────────────────────────
+  function submitFeedback() {
+    if (!feedbackText.trim()) {
+      window.alert("Write feedback before submitting.");
+      return;
+    }
+    const nextEntry: FeedbackEntry = {
+      id: `${Date.now()}`,
+      userName,
+      message: feedbackText.trim(),
+      createdAt: new Date().toISOString(),
+      screen,
+    };
+    const nextFeedback = [nextEntry, ...feedbackEntries];
+    setFeedbackEntries(nextFeedback);
+    localStorage.setItem(FEEDBACK_KEY, JSON.stringify(nextFeedback));
+    setFeedbackText("");
+  }
+
+  // ── Location ──────────────────────────────────────────────────────────────────
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setLocationLabel("Geolocation not supported in this browser");
@@ -1434,188 +2324,339 @@ export default function App() {
       () => {
         setLocationLabel("Location not shared");
       },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 },
     );
   }, []);
 
-  function checkCrisis(value: string) {
-    if (hasCrisisLanguage(value)) {
-      setCrisisCount((prev) => prev + 1);
-      setShowCrisisModal(true);
-    }
-  }
-
-  function updateField(id: string, value: string) {
-    setAnswers((prev) => ({ ...prev, [id]: value }));
-    checkCrisis(value);
-  }
-
-  function handleMoodChange(value: string) {
-    setMood(value);
-    checkCrisis(value);
-  }
-
-  function handleReasonChange(value: string) {
-    setReason(value);
-    checkCrisis(value);
-  }
-
-  function saveEntry() {
-    const entry: SavedEntry = {
-      id: `${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      answers,
-      mood,
-      reason,
-    };
-    const updated = [entry, ...journalEntries];
-    setJournalEntries(updated);
-    saveToStorage(updated);
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 2500);
-  }
-
-  function clearSession() {
-    setAnswers({});
-    setMood("");
-    setReason("");
-    setCrisisCount(0);
-    setLocationLabel("Not shared in this session");
-    setScreen("onboarding");
-  }
-
-  function confirmDeleteEntries() {
-    localStorage.removeItem(STORAGE_KEY);
-    setJournalEntries([]);
-    setShowDeleteModal(false);
-  }
-
-  function navigateToBreathe() {
-    setBreatheReturnScreen(screen === "breathe" ? "checkin" : screen);
-    setScreen("breathe");
-  }
-
-  const currentYear = new Date().getFullYear();
-
-  useEffect(() => {
-    document.title = "Mirror Within — Self-Inquiry Journal";
-  }, []);
-
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: "#140f12" }}>
-      {/* Modals */}
-      <AnimatePresence>
-        {showCrisisModal && (
-          <CrisisModal
-            open={showCrisisModal}
-            crisisCount={crisisCount}
-            onClose={() => setShowCrisisModal(false)}
-            onResources={() => {
-              setShowCrisisModal(false);
-              setScreen("resources");
-            }}
-            onShareLocation={() => {
-              requestLocation();
-              setShowCrisisModal(false);
-            }}
-          />
-        )}
-        {showDeleteModal && (
-          <DeleteModal
-            open={showDeleteModal}
-            onConfirm={confirmDeleteEntries}
-            onCancel={() => setShowDeleteModal(false)}
-          />
-        )}
-        {selectedEntry && (
-          <EntryDetailModal
-            entry={selectedEntry}
-            onClose={() => setSelectedEntry(null)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Save toast */}
-      <AnimatePresence>
-        {savedMsg && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="fixed top-5 left-1/2 -translate-x-1/2 z-40 rounded-full px-5 py-3 text-sm font-bold shadow-lg"
-            style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-            data-ocid="journal.success_state"
-          >
-            Entry saved locally ✓
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Main content */}
-      <div className="mx-auto max-w-[640px] px-5 pt-8 pb-12">
-        {/* Hero */}
-        <header className="mb-5">
+  // ── Loading ───────────────────────────────────────────────────────────────────
+  if (!hydrated) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-5"
+        style={{ backgroundColor: "#140f12" }}
+      >
+        <div
+          className="w-full max-w-sm rounded-3xl p-7"
+          style={{ backgroundColor: "#20161b", border: "1px solid #38262e" }}
+        >
           <p
-            className="text-[13px] font-extrabold tracking-[1.5px] uppercase mb-2"
+            className="text-xs font-bold tracking-widest uppercase mb-2"
             style={{ color: "#d9a6b7" }}
           >
             Mirror Within
           </p>
           <h1
-            className="text-[31px] leading-[38px] font-extrabold mb-3 font-display"
+            className="text-2xl font-extrabold mb-2"
             style={{ color: "#fff7fa" }}
           >
-            A self-inquiry app for facing your real self.
+            Loading
           </h1>
           <p
-            className="text-[15px] leading-[23px]"
-            style={{ color: "#d6c5cb" }}
+            className="text-sm"
+            style={{ color: "#d6c5cb", lineHeight: "1.6" }}
           >
-            Guided questions, private journaling, pattern-spotting, and crisis
-            support prompts built with transparency.
+            Restoring your session...
           </p>
-        </header>
+        </div>
+      </div>
+    );
+  }
 
-        {/* Nav */}
-        {screen !== "onboarding" && (
-          <Nav
-            current={screen}
-            onNav={(s) => {
-              if (s === "breathe") {
-                navigateToBreathe();
-              } else {
-                setScreen(s);
+  // ── Lock screen ───────────────────────────────────────────────────────────────
+  if (!isUnlocked && !showWelcome) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-5"
+        style={{ backgroundColor: "#140f12" }}
+        data-ocid="access.page"
+      >
+        <div
+          className="w-full max-w-sm rounded-3xl p-7"
+          style={{ backgroundColor: "#20161b", border: "1px solid #38262e" }}
+        >
+          <p
+            className="text-xs font-bold tracking-widest uppercase mb-2"
+            style={{ color: "#d9a6b7" }}
+          >
+            Mirror Within
+          </p>
+          <h1
+            className="text-2xl font-extrabold mb-2"
+            style={{ color: "#fff7fa" }}
+          >
+            Private Access
+          </h1>
+          <p
+            className="text-sm mb-6"
+            style={{ color: "#d6c5cb", lineHeight: "1.6" }}
+          >
+            Enter your access code to continue.
+          </p>
+          <input
+            type="text"
+            value={accessInput}
+            onChange={(e) => setAccessInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const name = allowedCodes[accessInput.trim()];
+                if (name) {
+                  setUserName(name);
+                  setShowWelcome(true);
+                } else {
+                  alert("Invalid code. Please try again.");
+                }
               }
+            }}
+            placeholder="Enter code"
+            className="w-full rounded-2xl px-4 py-3 text-sm outline-none mb-4"
+            style={{
+              backgroundColor: "#2b2025",
+              border: "1px solid #4a323c",
+              color: "#fff",
+            }}
+            data-ocid="access.input"
+          />
+          <button
+            type="button"
+            data-ocid="access.submit_button"
+            onClick={() => {
+              const name = allowedCodes[accessInput.trim()];
+              if (name) {
+                setUserName(name);
+                setShowWelcome(true);
+              } else {
+                alert("Invalid code. Please try again.");
+              }
+            }}
+            className="w-full rounded-2xl py-4 text-sm font-extrabold transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+          >
+            Unlock
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Welcome screen ────────────────────────────────────────────────────────────
+  if (showWelcome) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-5"
+        style={{ backgroundColor: "#140f12" }}
+      >
+        <div
+          className="w-full max-w-sm rounded-3xl p-8 text-center"
+          style={{ backgroundColor: "#20161b", border: "1px solid #38262e" }}
+        >
+          <p
+            className="text-xs font-bold tracking-widest uppercase mb-4"
+            style={{ color: "#d9a6b7" }}
+          >
+            Mirror Within
+          </p>
+          <h1
+            className="text-3xl font-extrabold mb-3"
+            style={{ color: "#fff7fa" }}
+          >
+            Welcome back, {userName}.
+          </h1>
+          <p
+            className="text-sm mb-8"
+            style={{ color: "#d6c5cb", lineHeight: "1.7" }}
+          >
+            This is a safe space for honest self-reflection. Take your time.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setIsUnlocked(true);
+              setShowWelcome(false);
+              refreshSessionTimer(userName);
+            }}
+            className="w-full rounded-2xl py-4 text-sm font-extrabold transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+          >
+            Begin
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main app ──────────────────────────────────────────────────────────────────
+  const navItems: { label: string; target: Screen }[] = [
+    { label: "Journey", target: "journey" },
+    { label: "Breathe", target: "breathe" },
+    { label: "Support", target: "support" },
+    { label: "Our Story", target: "creator" },
+  ];
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: "#120d10" }}>
+      {/* Modals */}
+      <AnimatePresence>
+        {showCrisisModal && (
+          <CrisisModal
+            open={showCrisisModal}
+            onClose={() => setShowCrisisModal(false)}
+            onSupport={() => {
+              setShowCrisisModal(false);
+              setScreen("support");
             }}
           />
         )}
+        {showClearDataModal && (
+          <ClearDataModal
+            open={showClearDataModal}
+            onConfirm={confirmClearAllData}
+            onCancel={() => setShowClearDataModal(false)}
+          />
+        )}
+      </AnimatePresence>
 
-        {/* Screens */}
+      {/* Crisis banner */}
+      {crisisActive && (
+        <div
+          className="sticky top-0 z-30 px-5 py-3 flex items-center justify-between gap-4"
+          style={{
+            backgroundColor: "#3a1f28",
+            borderBottom: "1px solid #7a3b4c",
+          }}
+        >
+          <p className="text-sm font-bold" style={{ color: "#ffd9e2" }}>
+            {crisisContent.title}
+          </p>
+          <button
+            type="button"
+            data-ocid="crisis.banner.button"
+            onClick={() => setScreen("support")}
+            className="rounded-full px-4 py-2 text-xs font-extrabold transition-opacity hover:opacity-90 whitespace-nowrap"
+            style={{ backgroundColor: "#ff6b8a", color: "#fff" }}
+          >
+            Get support
+          </button>
+        </div>
+      )}
+
+      {/* Main layout */}
+      <div className="mx-auto w-full max-w-6xl p-4 md:p-8">
+        {/* Header */}
+        <header
+          className="rounded-[30px] border p-6 shadow-2xl mb-6"
+          style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
+        >
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex-1">
+              <p
+                className="text-xs font-bold uppercase tracking-[0.25em]"
+                style={{ color: "#d9a6b7" }}
+              >
+                Mirror Within{userName ? ` · ${userName}` : ""}
+              </p>
+              <h1
+                className="mt-2 text-3xl font-extrabold leading-tight font-display md:text-4xl"
+                style={{ color: "#fff4f8" }}
+              >
+                A slower entrance, like opening a book instead of opening a
+                wound.
+              </h1>
+            </div>
+            <div className="flex flex-col items-start md:items-end gap-2 shrink-0">
+              <ProgressRings step={screen === "journey" ? journeyStep : 0} />
+              <div className="flex items-center gap-3">
+                <span
+                  className="text-[11px] font-semibold"
+                  style={{ color: "#a07080" }}
+                >
+                  {formatTimeRemaining(sessionCountdown)}
+                </span>
+                <button
+                  type="button"
+                  data-ocid="nav.logout.button"
+                  onClick={() => lockApp()}
+                  className="text-[11px] font-bold rounded-full px-3 py-1 border transition-opacity hover:opacity-80"
+                  style={{
+                    borderColor: "#76515e",
+                    color: "#f4d6df",
+                    backgroundColor: "transparent",
+                  }}
+                >
+                  Log out
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Nav */}
+          <nav className="flex flex-wrap gap-2 mt-5" data-ocid="nav.panel">
+            {navItems.map(({ label, target }) => (
+              <button
+                type="button"
+                key={target}
+                data-ocid={`nav.${target}.link`}
+                onClick={() => {
+                  refreshSessionTimer();
+                  if (target === "breathe") {
+                    setBreatheReturnScreen(
+                      screen === "breathe" ? "journey" : screen,
+                    );
+                  }
+                  setScreen(target);
+                }}
+                className="rounded-full px-[13px] py-[9px] text-[13px] font-semibold border transition-all"
+                style={{
+                  backgroundColor: screen === target ? "#38262e" : "#2a1e24",
+                  borderColor: "#4a323c",
+                  color: "#f1d8df",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </header>
+
+        {/* Screen content */}
         <main>
           <AnimatePresence mode="wait">
-            {screen === "onboarding" && (
+            {screen === "journey" && (
               <motion.div
-                key="onboarding"
+                key="journey"
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
               >
-                <OnboardingScreen onBegin={() => setScreen("checkin")} />
-              </motion.div>
-            )}
-            {screen === "checkin" && (
-              <motion.div
-                key="checkin"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <CheckinScreen
-                  mood={mood}
-                  reason={reason}
-                  onMoodChange={handleMoodChange}
-                  onReasonChange={handleReasonChange}
-                  onNext={() => setScreen("intake")}
+                <BookJourney
+                  step={journeyStep}
+                  sharedName={sharedName}
+                  selectedPath={selectedPath}
+                  selectedMode={selectedMode}
+                  chapterIndex={chapterIndex}
+                  typedResponses={typedResponses}
+                  savedChapters={savedChapters}
+                  profile={profile}
+                  onSetStep={setJourneyStep}
+                  onSetSharedName={setSharedName}
+                  onSetSelectedPath={setSelectedPath}
+                  onSetSelectedMode={setSelectedMode}
+                  onSetChapterIndex={setChapterIndex}
+                  onSetTypedResponses={setTypedResponses}
+                  onSetSavedChapters={setSavedChapters}
+                  onSetProfile={setProfile}
+                  onCrisisDetected={handleCrisisDetected}
+                  feedbackEntries={feedbackEntries}
+                  feedbackText={feedbackText}
+                  onFeedbackChange={setFeedbackText}
+                  onSubmitFeedback={submitFeedback}
+                  onClearAllData={clearAllLocalData}
+                  crisisCount={crisisCount}
+                  locationLabel={locationLabel}
+                  onShareLocation={requestLocation}
+                  onEndSession={clearSession}
                 />
               </motion.div>
             )}
+
             {screen === "breathe" && (
               <motion.div
                 key="breathe"
@@ -1625,74 +2666,27 @@ export default function App() {
                 <BreatheScreen onStop={() => setScreen(breatheReturnScreen)} />
               </motion.div>
             )}
-            {screen === "intake" && (
+
+            {screen === "support" && (
               <motion.div
-                key="intake"
+                key="support"
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
               >
-                <IntakeScreen
-                  prompts={intakePrompts}
-                  answers={answers}
-                  onChange={updateField}
-                  onNext={() => setScreen("shadow")}
-                />
-              </motion.div>
-            )}
-            {screen === "shadow" && (
-              <motion.div
-                key="shadow"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ShadowScreen
-                  prompts={shadowPrompts}
-                  answers={answers}
-                  onChange={updateField}
-                  onNext={() => setScreen("journal")}
-                />
-              </motion.div>
-            )}
-            {screen === "journal" && (
-              <motion.div
-                key="journal"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <JournalScreen
-                  journalEntries={journalEntries}
-                  onSave={saveEntry}
-                  onViewInsights={() => setScreen("insights")}
-                  onDeleteAll={() => setShowDeleteModal(true)}
-                  onViewEntry={setSelectedEntry}
-                />
-              </motion.div>
-            )}
-            {screen === "insights" && (
-              <motion.div
-                key="insights"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <InsightsScreen
-                  insights={insights}
+                <SupportScreen
+                  crisisContent={crisisContent}
                   crisisCount={crisisCount}
                   locationLabel={locationLabel}
-                  onShareLocation={requestLocation}
-                  onEndSession={clearSession}
-                  journalEntries={journalEntries}
+                  onRequestLocation={requestLocation}
+                  onContinue={() => {
+                    setCrisisActive(false);
+                    refreshSessionTimer();
+                    setScreen("journey");
+                  }}
                 />
               </motion.div>
             )}
-            {screen === "resources" && (
-              <motion.div
-                key="resources"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ResourcesScreen onShareLocation={requestLocation} />
-              </motion.div>
-            )}
+
             {screen === "creator" && (
               <motion.div
                 key="creator"
@@ -1707,15 +2701,13 @@ export default function App() {
 
         {/* Footer */}
         <footer className="mt-12 text-center">
-          <p className="text-xs" style={{ color: "#8d7d84" }}>
-            © {currentYear}. Built with{" "}
-            <span style={{ color: "#d9a6b7" }}>♥</span> using{" "}
+          <p className="text-xs" style={{ color: "#6b5560" }}>
+            © {new Date().getFullYear()}. Built with ♥ using{" "}
             <a
-              href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+              href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:opacity-80"
-              style={{ color: "#d9a6b7" }}
+              style={{ color: "#9e7a88" }}
             >
               caffeine.ai
             </a>
