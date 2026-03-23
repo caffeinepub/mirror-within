@@ -2444,7 +2444,13 @@ function BookJourney({
               type="button"
               data-ocid="journey.step3.primary_button"
               disabled={!selectedMode}
-              onClick={() => selectedMode && onSetStep(4)}
+              onClick={() => {
+                if (!selectedMode) return;
+                onSetChapterIndex(0);
+                onSetSavedChapters(() => []);
+                onSetTypedResponses(() => ({}));
+                onSetStep(4);
+              }}
               className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
             >
@@ -2491,29 +2497,6 @@ function BookJourney({
               {activePath.chapterTitle}
             </div>
           </div>
-          <div>
-            <p
-              className="text-sm font-semibold uppercase tracking-[0.2em]"
-              style={{ color: "#d9a6b7" }}
-            >
-              Chapter {chapterIndex + 1} of {activePath.questions.length}
-            </p>
-            <h2
-              className="mt-2 text-3xl font-extrabold leading-tight font-display"
-              style={{ color: "#fff4f8" }}
-            >
-              {activeQuestion}
-            </h2>
-            <p
-              className="mt-3 max-w-2xl text-sm leading-7"
-              style={{ color: "#d5c4cb" }}
-            >
-              {selectedMode === "voice"
-                ? `${sharedName}, say it out loud first. Let it be messy before it is meaningful.`
-                : `${sharedName}, write like no one is grading this. Let the sentence land before you edit it.`}
-            </p>
-          </div>
-
           {selectedMode === "voice" ? (
             <div
               className="rounded-[28px] border p-5"
@@ -3555,7 +3538,7 @@ export default function App() {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-5"
-        style={{ backgroundColor: "#140f12" }}
+        style={{ backgroundColor: "#140810" }}
       >
         <div
           className="w-full max-w-sm rounded-3xl p-7"
@@ -3589,7 +3572,7 @@ export default function App() {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-5"
-        style={{ backgroundColor: "#140f12" }}
+        style={{ backgroundColor: "#140810" }}
         data-ocid="access.page"
       >
         <div
@@ -3666,7 +3649,7 @@ export default function App() {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-5"
-        style={{ backgroundColor: "#140f12" }}
+        style={{ backgroundColor: "#140810" }}
       >
         <div
           className="w-full max-w-sm rounded-3xl p-8 text-center"
@@ -3765,9 +3748,21 @@ export default function App() {
         justifyContent: "center",
         padding: "24px",
         background:
-          "linear-gradient(180deg, #0f0b14 0%, #17111f 45%, #21152a 100%)",
+          "linear-gradient(180deg, #120608 0%, #1e0d12 45%, #2a1018 100%)",
       }}
     >
+      {/* Subtle dot pattern overlay */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 0,
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23ffffff' fill-opacity='0.03'/%3E%3C/svg%3E\")",
+          backgroundRepeat: "repeat",
+        }}
+      />
       {/* Global modals */}
       <AnimatePresence>
         {showCrisisModal && (
@@ -3800,6 +3795,8 @@ export default function App() {
           backdropFilter: "blur(14px)",
           boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
           overflow: "hidden",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         {/* Topbar */}
