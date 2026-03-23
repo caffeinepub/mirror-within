@@ -1,39 +1,36 @@
 # Mirror Within
 
 ## Current State
-The app has a full journaling system with access control (unique codes), session management (15-min timeout), intake/shadow prompts, crisis detection, pattern detection, insights, feedback collection, and experimental modes (micro-introspection, voice reflection, pattern reveal). The main flow uses a screen state machine in App.tsx.
+Full-width multi-column layout with a large header, left content panel, and right sidebar. Each segment fills the viewport. Garden visualization sits in the sidebar. The design uses a `#120d10` dark background with pink/rose accent colors. Feedback is collected but not displayed anywhere in the UI.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Full "Book Journey" flow replacing the journaling flow
-- Step 1: Welcome screen — user picks a shared name
-- Step 2: Entry intensity selection (Surface level, Ok I feel attacked, Love/distance/attachment, Control/pressure/performance)
-- Step 3: Expression method selection (voice "Your very own TedTalk" or writing "Hear ye Hear ye")
-- Step 4: Chapter-by-chapter reflection with real mic controls (SpeechRecognition API) for voice mode and textarea for writing mode; follow-up prompts appear after each response
-- Step 5: End of chapter recap showing all saved responses
-- Pattern detection after chapter completion (avoidance, control, abandonment, over-giving)
-- Adaptive next-step routing (stay/deepen/shift lens) based on detected patterns
-- Persistent pattern profile stored in localStorage (mw_profile_v1)
-- Pattern profile shows session count and pattern frequency
+- Page-peel animation when transitioning between steps: `perspective(1200px) rotateY(-18deg) translateX(28px) scale(0.98)` → neutral on entry
+- Step indicator pill in topbar (e.g. "Welcome", "Entry Point", "Lens", "Reflection", "Pattern", "Recap", "Adaptive")
+- **Feedback viewer page**: A dedicated page inside the shell (accessible from the recap/end screen or a small icon in the topbar) that shows all saved feedback entries from localStorage (`mirror_within_feedback_v4`). Each entry shows the name, message, screen, and date. If no feedback exists, show a gentle empty state.
 
 ### Modify
-- Replace the existing journaling/prompt flow with the Book Journey flow
-- Keep access control (unique codes + personalized greeting)
-- Keep session management (15-min timeout, autosave, relock)
-- Keep crisis detection (keywords still checked against journal responses)
-- Keep privacy controls and feedback
-- Keep the dark theme design
+- **Layout**: Replace full-width multi-column layout with a compact single centered shell card (max-width 520px, `border-radius: 28px`, `backdrop-filter: blur(14px)`, background `rgba(255,255,255,0.06)`, border `rgba(255,255,255,0.08)`)
+- **Background**: Use `linear-gradient(180deg, #0f0b14 0%, #17111f 45%, #21152a 100%)` instead of flat `#120d10`
+- **Topbar**: Small topbar inside the shell with brand label "Mirror" (uppercase, tracking) and the step pill on the right. Add a small feedback icon button (e.g. MessageSquare icon) in the topbar that navigates to the feedback viewer page.
+- **Pages**: Each step/segment renders as a "page" inside the shell; only the active page is visible; all use the peel-in animation on mount
+- **Garden**: Move garden into the shell as its own dedicated page/step shown after pattern analysis. Keep all garden symbols/milestones, render inline inside the card.
+- **Sidebar removed**: All content that was in the right sidebar folded into the main flow or removed. Garden stays as a dedicated page.
+- **Buttons**: Keep existing color scheme (primary = `#f3d8ff` / `#efc1d0`, secondary = translucent white border)
+- All existing feature logic (access codes, Book Journey segments 1-5, conversational follow-ups, mic toggle, crisis detection, adaptive routing, localStorage) is preserved exactly -- only the visual shell, layout, and feedback visibility change
 
 ### Remove
-- Old intake/shadow prompt screens
-- Old experimental modes (micro-introspection standalone, old pattern reveal)
-- Old journal entry list/delete flow (replaced by book journey chapter recap)
+- Right sidebar (current selections, "what this segment adds" panel)
+- Multi-column grid layout
+- Large header section at the top of the page
 
 ## Implementation Plan
-1. Replace the journaling screen flow in App.tsx with the Book Journey multi-step component
-2. Integrate entryPaths data, ProgressRings, PathPreview, voice capture, chapter saving, pattern detection, adaptive routing, and profile persistence
-3. Keep the access control gate (unique codes) before the Book Journey starts
-4. Keep crisis detection scanning chapter responses
-5. Keep session timeout, autosave, privacy controls, feedback
-6. Use existing dark theme colors (#120d10, #1b1317, #efc1d0, etc.)
+1. Refactor the outer layout to a centered flex container with the compact shell card
+2. Update background to the gradient
+3. Add topbar with brand + step pill + feedback icon inside the shell
+4. Wrap each segment in a page div with the peel-in animation (framer-motion AnimatePresence + motion.div with perspective rotateY, or CSS keyframes)
+5. Move garden view into the shell as a dedicated step after recap
+6. Add feedback viewer page that reads from `mirror_within_feedback_v4` localStorage and renders all entries
+7. Remove sidebar markup entirely
+8. Keep all state, logic, storage keys, access codes, and flow unchanged

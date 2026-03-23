@@ -3,17 +3,23 @@ import {
   BookOpen,
   ChevronRight,
   Feather,
+  MessageSquare,
   Mic,
-  PauseCircle,
   PenTool,
-  PlayCircle,
   Sparkles,
+  Sprout,
+  Wind,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-type Screen = "journey" | "breathe" | "support" | "creator";
+type Screen =
+  | "journey"
+  | "breathe"
+  | "support"
+  | "creator"
+  | "feedback"
+  | "garden";
 
 type FeedbackEntry = {
   id: string;
@@ -139,25 +145,6 @@ const entryPaths = [
   },
 ];
 
-const followupsByPath: Record<string, string[]> = {
-  surface: [
-    "Why did that small moment take up more space than it should have?",
-    "What emotion was under the irritation, distance, or discomfort?",
-  ],
-  attacked: [
-    "What changes the second you stop pretending not to know this?",
-    "What do you gain from keeping this pattern alive?",
-  ],
-  love: [
-    "Are you trying to be understood, or are you trying not to be abandoned?",
-    "What are you accepting because being chosen feels better than being alone?",
-  ],
-  control: [
-    "What are you afraid would happen if you were not holding everything together?",
-    "Who are you without the role of being the one who manages it all?",
-  ],
-};
-
 const basePatterns = [
   {
     id: "avoidance",
@@ -183,7 +170,159 @@ const basePatterns = [
     test: (t: string) => /(give|gave|fix|do everything|prove)/i.test(t),
     advice: "You may be linking worth to what you give.",
   },
+  {
+    id: "deflection",
+    name: "Deflection",
+    test: (t: string) =>
+      /(idk|i don'?t know|not sure|don'?t know|unsure|maybe|i guess|no idea)/i.test(
+        t,
+      ),
+    advice: "Uncertainty can be a form of self-protection.",
+  },
+  {
+    id: "minimizing",
+    name: "Minimizing",
+    test: (t: string) =>
+      /(it'?s? fine|doesn'?t matter|not a big deal|whatever|not important|i'?m fine)/i.test(
+        t,
+      ),
+    advice:
+      "Minimizing feelings is often a learned response to having them dismissed.",
+  },
+  {
+    id: "self_blame",
+    name: "Self-blame",
+    test: (t: string) =>
+      /(my fault|i should have|i always|i never|i ruin|i mess|blame myself)/i.test(
+        t,
+      ),
+    advice: "You may be directing responsibility inward.",
+  },
+  {
+    id: "rumination",
+    name: "Rumination",
+    test: (t: string) =>
+      /(keep thinking|can'?t stop|going over|over and over|stuck on|obsessing|loop)/i.test(
+        t,
+      ),
+    advice:
+      "Your mind may be trying to solve something that isn't a thinking problem.",
+  },
+  {
+    id: "people_pleasing",
+    name: "People-pleasing",
+    test: (t: string) =>
+      /(make them happy|keep the peace|don'?t want to upset|not want to disappoint|their feelings|they need)/i.test(
+        t,
+      ),
+    advice: "You may be prioritizing others' comfort over your own truth.",
+  },
+  {
+    id: "numbness",
+    name: "Emotional numbness",
+    test: (t: string) =>
+      /(feel nothing|don'?t feel|numb|blank|empty|disconnected|shut down)/i.test(
+        t,
+      ),
+    advice:
+      "Numbness is often protection from something that felt too big to feel.",
+  },
 ];
+
+// ─── Conversational follow-up engine ─────────────────────────────────────────
+const vagueSignals =
+  /\b(idk|i don'?t know|not sure|don'?t know|unsure|maybe|i guess|no idea)\b/i;
+const minimizingSignals =
+  /\b(it'?s? fine|doesn'?t matter|not a big deal|whatever|not important|i'?m fine)\b/i;
+
+const followupTemplates = {
+  vague: [
+    "That's okay. What's the first word that comes to mind when you sit with this?",
+    "No pressure to have an answer. What does your body do when you think about it?",
+    "You don't have to know yet. What part of not knowing feels uncomfortable?",
+    "What would you say if you had to guess?",
+  ],
+  minimizing: [
+    "What would you say if it did matter?",
+    "What are you protecting by keeping it small?",
+    "Imagine someone you love said that to you. What would you want to say back?",
+    "What does it cost you to keep calling it fine?",
+  ],
+  surface: [
+    "What was the emotion underneath that moment before you moved on?",
+    "Why do you think that specific thing stayed with you and not something else?",
+    "What does that feeling remind you of from before?",
+    "If you had to name the feeling in one word, what would it be?",
+    "What did you want to happen instead?",
+  ],
+  attacked: [
+    "What changes the second you stop pretending not to know this?",
+    "What do you gain from keeping this pattern alive?",
+    "Who taught you that this was the way to survive?",
+    "What would you have to give up if this pattern no longer served you?",
+    "What are you most afraid to say out loud about this?",
+  ],
+  love: [
+    "Are you trying to be understood, or are you trying not to be abandoned?",
+    "What are you accepting because being chosen feels better than being alone?",
+    "What does love feel like when it's not something you have to earn?",
+    "What part of you believes you have to work to keep people?",
+    "What are you over-explaining right now?",
+  ],
+  control: [
+    "What are you afraid would happen if you were not holding everything together?",
+    "Who are you without the role of being the one who manages it all?",
+    "What would rest actually look like for you right now?",
+    "When did control start feeling like safety?",
+    "What would you let go of if you knew it would still be okay?",
+  ],
+  integration: [
+    "What do you know now that you didn't when this chapter started?",
+    "What's the thing you said today that surprised you most?",
+    "What pattern do you notice in what you've shared?",
+    "If your past self could hear what you just said, what would they feel?",
+  ],
+};
+
+function generateFollowup(
+  response: string,
+  pathId: string,
+  exchangeCount: number,
+): string {
+  const r = (response || "").trim();
+
+  // Integration question after 3+ exchanges
+  if (exchangeCount >= 3) {
+    const pool = followupTemplates.integration;
+    return pool[exchangeCount % pool.length];
+  }
+
+  // Vague/uncertain response
+  if (r.length < 15 || vagueSignals.test(r)) {
+    const pool = followupTemplates.vague;
+    return pool[exchangeCount % pool.length];
+  }
+
+  // Minimizing response
+  if (minimizingSignals.test(r)) {
+    const pool = followupTemplates.minimizing;
+    return pool[exchangeCount % pool.length];
+  }
+
+  // Path-specific follow-ups
+  const pathPool =
+    pathId === "surface"
+      ? followupTemplates.surface
+      : pathId === "attacked"
+        ? followupTemplates.attacked
+        : pathId === "love"
+          ? followupTemplates.love
+          : pathId === "control"
+            ? followupTemplates.control
+            : followupTemplates.integration;
+
+  return pathPool[exchangeCount % pathPool.length];
+}
 
 const adaptiveQuestions = {
   deepen: [
@@ -594,23 +733,6 @@ function ClearDataModal({
   );
 }
 
-// ─── ProgressRings ────────────────────────────────────────────────────────────
-function ProgressRings({ step }: { step: number }) {
-  return (
-    <div className="flex items-center gap-2">
-      {[1, 2, 3, 4, 5].map((item) => (
-        <div
-          key={item}
-          className="h-2.5 w-8 rounded-full transition-all duration-300"
-          style={{
-            backgroundColor: item <= step ? "#efc1d0" : "#3a2b31",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 // ─── PathPreview ──────────────────────────────────────────────────────────────
 function PathPreview({
   path,
@@ -893,7 +1015,683 @@ function SupportScreen({
   );
 }
 
-// ─── BookJourney ──────────────────────────────────────────────────────────────
+// ─── GardenPanel ──────────────────────────────────────────────────────────────
+const GARDEN_KEY = "mw_garden_v1";
+
+interface GardenProps {
+  journeyStep: number;
+  savedChapters: { chapter: number; question: string; response: string }[];
+  selectedPath: string | null;
+  profile: { sessions: number; counts: Record<string, number> };
+}
+
+const gardenPlants = [
+  { id: "sprout", name: "Sprout of Beginning", symbol: "🌱" },
+  { id: "moonflower", name: "Moonflower of Self-Awareness", symbol: "🌙" },
+  { id: "lavender", name: "Lavender of Gentleness", symbol: "💜" },
+  { id: "chrysanthemum", name: "Chrysanthemum of Courage", symbol: "🌸" },
+  { id: "lotus", name: "Lotus of Neutral Attachment", symbol: "🪷" },
+  { id: "forgetmenot", name: "Forget-me-not of Letting Go", symbol: "💙" },
+  { id: "rose", name: "Rose of Self-Esteem", symbol: "🌹" },
+  { id: "jasmine", name: "Jasmine of Confidence", symbol: "🤍" },
+  { id: "sunflower", name: "Sunflower of Self-Love", symbol: "🌻" },
+  { id: "willow", name: "Willow of Resilience", symbol: "🌿" },
+];
+
+function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
+  const opacity = unlocked ? 1 : 0.15;
+  const plants: Record<string, React.ReactNode> = {
+    sprout: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Sprout of Beginning"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="50"
+          x2="20"
+          y2="28"
+          stroke="#4d7c52"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+        <ellipse cx="20" cy="22" rx="8" ry="10" fill="#7a9e7e" />
+        <ellipse
+          cx="12"
+          cy="30"
+          rx="6"
+          ry="4"
+          fill="#a8c5aa"
+          transform="rotate(-30 12 30)"
+        />
+      </svg>
+    ),
+    moonflower: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Moonflower of Self-Awareness"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="50"
+          x2="20"
+          y2="28"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <circle cx="20" cy="20" r="10" fill="#d8eeff" />
+        <circle cx="16" cy="16" r="6" fill="#1b1317" />
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+          <ellipse
+            key={a}
+            cx={20}
+            cy={9}
+            rx="2.5"
+            ry="4"
+            fill="#d8eeff"
+            transform={`rotate(${a} 20 20)`}
+          />
+        ))}
+      </svg>
+    ),
+    lavender: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Lavender of Gentleness"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="30"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="44"
+          x2="14"
+          y2="38"
+          stroke="#7a9e7e"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="44"
+          x2="26"
+          y2="38"
+          stroke="#7a9e7e"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        {[0, 4, 8, 12, 16].map((i) => (
+          <ellipse
+            key={i}
+            cx="20"
+            cy={30 - i * 2}
+            rx="3"
+            ry="2"
+            fill="#9b8fc4"
+          />
+        ))}
+      </svg>
+    ),
+    chrysanthemum: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Chrysanthemum of Courage"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="30"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a) => (
+          <ellipse
+            key={a}
+            cx="20"
+            cy="15"
+            rx="3"
+            ry="7"
+            fill="#efc1d0"
+            transform={`rotate(${a} 20 22)`}
+          />
+        ))}
+        <circle cx="20" cy="22" r="5" fill="#f6dae3" />
+      </svg>
+    ),
+    lotus: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Lotus of Neutral Attachment"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="36"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <ellipse cx="20" cy="30" rx="5" ry="10" fill="#c49bd8" />
+        <ellipse
+          cx="12"
+          cy="34"
+          rx="4"
+          ry="8"
+          fill="#c49bd8"
+          transform="rotate(-25 12 34)"
+        />
+        <ellipse
+          cx="28"
+          cy="34"
+          rx="4"
+          ry="8"
+          fill="#c49bd8"
+          transform="rotate(25 28 34)"
+        />
+        <ellipse
+          cx="7"
+          cy="38"
+          rx="3.5"
+          ry="7"
+          fill="#d8c0e8"
+          transform="rotate(-45 7 38)"
+        />
+        <ellipse
+          cx="33"
+          cy="38"
+          rx="3.5"
+          ry="7"
+          fill="#d8c0e8"
+          transform="rotate(45 33 38)"
+        />
+      </svg>
+    ),
+    forgetmenot: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Forget-me-not of Letting Go"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="28"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        {[0, 72, 144, 216, 288].map((a) => (
+          <ellipse
+            key={a}
+            cx="20"
+            cy="14"
+            rx="4"
+            ry="7"
+            fill="#7b9ed9"
+            transform={`rotate(${a} 20 22)`}
+          />
+        ))}
+        <circle cx="20" cy="22" r="3.5" fill="#f4f0e8" />
+      </svg>
+    ),
+    rose: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Rose of Self-Esteem"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="32"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="42"
+          x2="14"
+          y2="36"
+          stroke="#7a9e7e"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <ellipse
+          cx="12"
+          cy="35"
+          rx="4"
+          ry="2.5"
+          fill="#a8c5aa"
+          transform="rotate(-20 12 35)"
+        />
+        <circle cx="20" cy="22" r="10" fill="#c45c6a" />
+        <ellipse cx="20" cy="18" rx="6" ry="8" fill="#d9748a" />
+        <ellipse cx="20" cy="20" rx="3.5" ry="5" fill="#e89aaa" />
+      </svg>
+    ),
+    jasmine: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Jasmine of Confidence"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="30"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="40"
+          x2="13"
+          y2="33"
+          stroke="#7a9e7e"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="40"
+          x2="27"
+          y2="33"
+          stroke="#7a9e7e"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        {[0, 60, 120, 180, 240, 300].map((a) => (
+          <ellipse
+            key={a}
+            cx="20"
+            cy="14"
+            rx="2.5"
+            ry="7"
+            fill="#f4f0e8"
+            transform={`rotate(${a} 20 22)`}
+          />
+        ))}
+        <circle cx="20" cy="22" r="3" fill="#e8c87a" />
+        {[0, 60, 120, 180, 240, 300].map((a) => (
+          <ellipse
+            key={`b${a}`}
+            cx="13"
+            cy="30"
+            rx="2"
+            ry="5"
+            fill="#f4f0e8"
+            transform={`rotate(${a} 13 35)`}
+          />
+        ))}
+        <circle cx="13" cy="35" r="2.5" fill="#e8c87a" />
+        {[0, 60, 120, 180, 240, 300].map((a) => (
+          <ellipse
+            key={`c${a}`}
+            cx="27"
+            cy="30"
+            rx="2"
+            ry="5"
+            fill="#f4f0e8"
+            transform={`rotate(${a} 27 35)`}
+          />
+        ))}
+        <circle cx="27" cy="35" r="2.5" fill="#e8c87a" />
+      </svg>
+    ),
+    sunflower: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Sunflower of Self-Love"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="28"
+          stroke="#4d7c52"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="44"
+          x2="12"
+          y2="38"
+          stroke="#7a9e7e"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <ellipse
+          cx="10"
+          cy="37"
+          rx="5"
+          ry="2.5"
+          fill="#a8c5aa"
+          transform="rotate(-30 10 37)"
+        />
+        {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a) => (
+          <ellipse
+            key={a}
+            cx="20"
+            cy="12"
+            rx="3"
+            ry="7"
+            fill="#e8c87a"
+            transform={`rotate(${a} 20 22)`}
+          />
+        ))}
+        <circle cx="20" cy="22" r="7" fill="#8b5e0a" />
+        <circle cx="20" cy="22" r="4" fill="#6b4408" />
+      </svg>
+    ),
+    willow: (
+      <svg
+        viewBox="0 0 40 56"
+        width="40"
+        height="56"
+        role="img"
+        aria-label="Willow of Resilience"
+        style={{ opacity }}
+      >
+        <line
+          x1="20"
+          y1="52"
+          x2="20"
+          y2="18"
+          stroke="#4d7c52"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="18"
+          x2="10"
+          y2="10"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <line
+          x1="20"
+          y1="18"
+          x2="30"
+          y2="10"
+          stroke="#4d7c52"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        {[12, 16, 20, 24, 28].map((x) => (
+          <path
+            key={x}
+            d={`M${x} ${x < 16 ? 14 : x > 24 ? 14 : 12} Q${x - 4} ${x < 16 ? 28 : 26} ${x - 6} ${x < 16 ? 40 : 38}`}
+            stroke="#7a9e7e"
+            strokeWidth="1.5"
+            fill="none"
+            strokeLinecap="round"
+          />
+        ))}
+        {[12, 17, 22, 27, 32].map((x) => (
+          <path
+            key={`r${x}`}
+            d={`M${x} ${x < 17 ? 14 : x > 27 ? 14 : 12} Q${x + 4} ${x < 17 ? 28 : 26} ${x + 6} ${x < 17 ? 40 : 38}`}
+            stroke="#a8c5aa"
+            strokeWidth="1.5"
+            fill="none"
+            strokeLinecap="round"
+          />
+        ))}
+      </svg>
+    ),
+  };
+  return plants[id] ?? null;
+}
+
+function checkMilestones(
+  journeyStep: number,
+  savedChapters: GardenProps["savedChapters"],
+  selectedPath: string | null,
+  profile: GardenProps["profile"],
+): string[] {
+  const met: string[] = [];
+  if (journeyStep >= 2) met.push("sprout");
+  if (savedChapters.length > 0) met.push("moonflower");
+  if (selectedPath === "surface" && savedChapters.length > 0)
+    met.push("lavender");
+  if (selectedPath === "attacked" && savedChapters.length > 0)
+    met.push("chrysanthemum");
+  if (selectedPath === "love" && savedChapters.length > 0) met.push("lotus");
+  if (selectedPath === "control" && savedChapters.length > 0)
+    met.push("forgetmenot");
+  if (profile.sessions >= 2) met.push("rose");
+  if (profile.sessions >= 4) met.push("jasmine");
+  if (profile.sessions >= 6) met.push("sunflower");
+  if (Object.values(profile.counts).some((v) => v >= 3)) met.push("willow");
+  return met;
+}
+
+function GardenPanel({
+  journeyStep,
+  savedChapters,
+  selectedPath,
+  profile,
+}: GardenProps) {
+  const [unlockedIds, setUnlockedIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(GARDEN_KEY) || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const met = checkMilestones(
+      journeyStep,
+      savedChapters,
+      selectedPath,
+      profile,
+    );
+    const current = new Set(unlockedIds);
+    const newOnes = met.filter((id) => !current.has(id));
+    if (newOnes.length > 0) {
+      const updated = [...unlockedIds, ...newOnes];
+      setUnlockedIds(updated);
+      localStorage.setItem(GARDEN_KEY, JSON.stringify(updated));
+    }
+  }, [journeyStep, savedChapters, selectedPath, profile, unlockedIds]);
+
+  return (
+    <div
+      className="rounded-[32px] border p-6 shadow-2xl"
+      style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
+    >
+      <p
+        className="text-xs font-bold uppercase tracking-[0.2em] mb-1"
+        style={{ color: "#d9a6b7" }}
+      >
+        Your garden
+      </p>
+      <p className="text-sm leading-6 mb-5" style={{ color: "#dbc8cf" }}>
+        Your garden grows with you.
+      </p>
+      <div className="grid grid-cols-5 gap-3">
+        {gardenPlants.map((plant) => {
+          const isUnlocked = unlockedIds.includes(plant.id);
+          return (
+            <div key={plant.id} className="flex flex-col items-center gap-1">
+              <div className="flex items-center justify-center">
+                <PlantSVG id={plant.id} unlocked={isUnlocked} />
+              </div>
+              {isUnlocked ? (
+                <p
+                  className="text-center text-[9px] leading-tight font-semibold"
+                  style={{ color: "#d9a6b7" }}
+                >
+                  {plant.name.split(" of ")[0]}
+                </p>
+              ) : (
+                <p
+                  className="text-center text-[9px] leading-tight"
+                  style={{ color: "#4a323c" }}
+                >
+                  ?
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {unlockedIds.length === 0 && (
+        <p
+          className="mt-4 text-xs leading-5 text-center"
+          style={{ color: "#5a4048" }}
+        >
+          Begin your journey to see the first bloom.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── FeedbackViewer ──────────────────────────────────────────────────────────
+function FeedbackViewer({ onBack }: { onBack: () => void }) {
+  const entries: {
+    id: string;
+    userName: string;
+    message: string;
+    screen: string;
+    createdAt: string;
+  }[] = (() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem("mirror_within_feedback_v4") || "[]",
+      );
+    } catch {
+      return [];
+    }
+  })();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="space-y-5"
+    >
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          data-ocid="feedback.close_button"
+          onClick={onBack}
+          className="rounded-full border p-2 transition hover:opacity-80"
+          style={{
+            borderColor: "#4a323c",
+            backgroundColor: "#24181d",
+            color: "#f0d7df",
+          }}
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <h2
+          className="text-2xl font-extrabold font-display"
+          style={{ color: "#fff4f8" }}
+        >
+          Feedback
+        </h2>
+      </div>
+      {entries.length === 0 ? (
+        <div
+          className="rounded-[24px] border p-6 text-center"
+          style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+          data-ocid="feedback.empty_state"
+        >
+          <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
+            No feedback written yet.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3" data-ocid="feedback.list">
+          {entries.map((entry, i) => (
+            <div
+              key={entry.id}
+              className="rounded-[24px] border p-5"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+              data-ocid={`feedback.item.${i + 1}`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p
+                  className="text-xs font-bold uppercase tracking-wide"
+                  style={{ color: "#d9a6b7" }}
+                >
+                  {entry.userName || "Anonymous"}
+                </p>
+                <p className="text-xs" style={{ color: "#6b5560" }}>
+                  {new Date(entry.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+              <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
+                {entry.message}
+              </p>
+              {entry.screen && (
+                <p className="mt-2 text-xs" style={{ color: "#6b5560" }}>
+                  Screen: {entry.screen}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 function BookJourney({
   step,
   sharedName,
@@ -957,13 +1755,21 @@ function BookJourney({
   const [spokenTranscript, setSpokenTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
 
+  // Conversation thread state
+  type ThreadEntry = { role: "prompt" | "user"; text: string };
+  const [conversationThread, setConversationThread] = useState<ThreadEntry[]>(
+    [],
+  );
+  const [threadInput, setThreadInput] = useState("");
+  const [inConversation, setInConversation] = useState(false);
+  const threadEndRef = useRef<HTMLDivElement>(null);
+
   const activePath = useMemo(
     () => entryPaths.find((item) => item.id === selectedPath) || null,
     [selectedPath],
   );
 
   const activeQuestion = activePath?.questions?.[chapterIndex] ?? "";
-  const followups = selectedPath ? (followupsByPath[selectedPath] ?? []) : [];
   const currentResponse =
     selectedMode === "voice"
       ? spokenTranscript
@@ -972,6 +1778,16 @@ function BookJourney({
   const allChaptersDone = activePath
     ? chapterIndex >= activePath.questions.length - 1
     : false;
+
+  // Live pattern detection on current input
+  const livePatterns = useMemo(() => {
+    const allText = [
+      currentResponse,
+      threadInput,
+      ...conversationThread.filter((e) => e.role === "user").map((e) => e.text),
+    ];
+    return basePatterns.filter((p) => p.test(allText.join(" ")));
+  }, [currentResponse, threadInput, conversationThread]);
 
   // Pattern detection for step 5
   const detectedPatternIds = useMemo(
@@ -1039,13 +1855,59 @@ function BookJourney({
     onCrisisDetected(val);
   }
 
-  function saveAndAdvance() {
+  function startConversation() {
     if (!activePath || !canAdvance) return;
+    const firstFollowup = generateFollowup(
+      currentResponse,
+      selectedPath ?? "",
+      0,
+    );
+    setConversationThread([
+      { role: "prompt", text: activeQuestion },
+      { role: "user", text: currentResponse },
+      { role: "prompt", text: firstFollowup },
+    ]);
+    setThreadInput("");
+    setInConversation(true);
+    if (selectedMode === "voice") {
+      stopListening();
+    }
+  }
+
+  function submitThreadReply() {
+    if (!threadInput.trim()) return;
+    const userEntries = conversationThread.filter((e) => e.role === "user");
+    const exchangeCount = userEntries.length + 1;
+    const followup = generateFollowup(
+      threadInput,
+      selectedPath ?? "",
+      exchangeCount,
+    );
+    const newThread = [
+      ...conversationThread,
+      { role: "user" as const, text: threadInput },
+      { role: "prompt" as const, text: followup },
+    ];
+    setConversationThread(newThread);
+    onCrisisDetected(threadInput);
+    setThreadInput("");
+    setTimeout(() => {
+      threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 50);
+  }
+
+  function finishChapterAndAdvance() {
+    if (!activePath) return;
+    const allUserTexts = conversationThread
+      .filter((e) => e.role === "user")
+      .map((e) => e.text)
+      .join(" ");
+    const fullResponse = allUserTexts || currentResponse;
     const record: ChapterRecord = {
       chapter: chapterIndex + 1,
       question: activeQuestion,
-      response: currentResponse,
-      followups,
+      response: fullResponse,
+      followups: [],
       mode: selectedMode ?? "writing",
     };
     onSetSavedChapters((prev) => {
@@ -1055,9 +1917,17 @@ function BookJourney({
       ];
       return next.sort((a, b) => a.chapter - b.chapter);
     });
+    setInConversation(false);
+    setConversationThread([]);
+    setThreadInput("");
     if (selectedMode === "voice") {
       setSpokenTranscript("");
-      stopListening();
+    } else {
+      onSetTypedResponses((prev) => {
+        const next = { ...prev };
+        delete next[chapterIndex];
+        return next;
+      });
     }
     if (chapterIndex < activePath.questions.length - 1) {
       onSetChapterIndex(chapterIndex + 1);
@@ -1076,544 +1946,532 @@ function BookJourney({
     }
   }
 
-  const sidebarDisplay = {
-    name: sharedName || "Not chosen yet",
-    beginning: activePath?.label || "Not chosen yet",
-    style:
-      selectedMode === "voice"
-        ? "Your very own TedTalk"
-        : selectedMode === "writing"
-          ? "Hear ye Hear ye"
-          : "Not chosen yet",
-    progress:
-      step < 4 || !activePath
-        ? "Not started yet"
-        : `${Math.min(chapterIndex + 1, activePath.questions.length)} / ${
-            activePath.questions.length
-          }`,
-  };
-
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-      {/* Main section */}
-      <section
-        className="rounded-[32px] border p-6 shadow-2xl md:p-8"
-        style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
-      >
-        {/* Step 1: Welcome / Shared name */}
-        {step === 1 && (
-          <motion.div
-            key="step1"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-6"
+    <div className="space-y-6">
+      {/* Step 1: Welcome / Shared name */}
+      {step === 1 && (
+        <motion.div
+          key="step1"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3 }}
+          className="space-y-6"
+        >
+          <div
+            className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+            style={{
+              borderColor: "#4a323c",
+              backgroundColor: "#24181d",
+              color: "#f0d7df",
+            }}
           >
-            <div
-              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+            <BookOpen className="mr-2 h-4 w-4" />
+            Welcome screen
+          </div>
+          <div>
+            <h2
+              className="text-3xl font-extrabold leading-tight font-display"
+              style={{ color: "#fff4f8" }}
+            >
+              Whose story are we reading today?
+            </h2>
+            <p
+              className="mt-3 max-w-2xl text-sm leading-7"
+              style={{ color: "#d5c4cb" }}
+            >
+              You do not have to use your real name. Choose the name you want
+              this story to be held under.
+            </p>
+          </div>
+          <div
+            className="rounded-[28px] border p-5"
+            style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+          >
+            <label
+              htmlFor="shared-name-input"
+              className="block text-sm font-bold"
+              style={{ color: "#f1d8df" }}
+            >
+              Shared name
+            </label>
+            <input
+              id="shared-name-input"
+              value={sharedName}
+              onChange={(e) => onSetSharedName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && sharedName.trim()) onSetStep(2);
+              }}
+              placeholder="K, The version of me today, Unbothered..."
+              data-ocid="journey.shared_name.input"
+              className="mt-3 w-full rounded-2xl border px-4 py-3 text-white outline-none"
               style={{
                 borderColor: "#4a323c",
-                backgroundColor: "#24181d",
-                color: "#f0d7df",
+                backgroundColor: "#2b2025",
               }}
+            />
+            <p className="mt-3 text-xs leading-6" style={{ color: "#bfa9b2" }}>
+              Examples: K, The version of me today, Unbothered, Soft Girl, Main
+              Character.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-ocid="journey.step1.primary_button"
+            onClick={() => sharedName.trim() && onSetStep(2)}
+            disabled={!sharedName.trim()}
+            className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+          >
+            Turn the page
+            <ChevronRight className="ml-2 h-4 w-4" />
+          </button>
+        </motion.div>
+      )}
+
+      {/* Step 2: Entry intensity */}
+      {step === 2 && (
+        <motion.div
+          key="step2"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3 }}
+          className="space-y-6"
+        >
+          <div
+            className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+            style={{
+              borderColor: "#4a323c",
+              backgroundColor: "#24181d",
+              color: "#f0d7df",
+            }}
+          >
+            <BookOpen className="mr-2 h-4 w-4" />
+            Entry intensity
+          </div>
+          <div>
+            <h2
+              className="text-3xl font-extrabold leading-tight font-display"
+              style={{ color: "#fff4f8" }}
             >
-              <BookOpen className="mr-2 h-4 w-4" />
-              Welcome screen
-            </div>
-            <div>
-              <h2
-                className="text-3xl font-extrabold leading-tight font-display"
-                style={{ color: "#fff4f8" }}
-              >
-                Whose story are we reading today?
-              </h2>
-              <p
-                className="mt-3 max-w-2xl text-sm leading-7"
-                style={{ color: "#d5c4cb" }}
-              >
-                You do not have to use your real name. Choose the name you want
-                this story to be held under.
-              </p>
-            </div>
-            <div
-              className="rounded-[28px] border p-5"
-              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+              Where does the story begin, {sharedName}?
+            </h2>
+            <p
+              className="mt-3 max-w-2xl text-sm leading-7"
+              style={{ color: "#d5c4cb" }}
             >
-              <label
-                htmlFor="shared-name-input"
-                className="block text-sm font-bold"
-                style={{ color: "#f1d8df" }}
-              >
-                Shared name
-              </label>
-              <input
-                id="shared-name-input"
-                value={sharedName}
-                onChange={(e) => onSetSharedName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && sharedName.trim()) onSetStep(2);
-                }}
-                placeholder="K, The version of me today, Unbothered..."
-                data-ocid="journey.shared_name.input"
-                className="mt-3 w-full rounded-2xl border px-4 py-3 text-white outline-none"
-                style={{
-                  borderColor: "#4a323c",
-                  backgroundColor: "#2b2025",
-                }}
+              Start where you can handle. You can always peel deeper later.
+            </p>
+          </div>
+          <div className="grid gap-4">
+            {entryPaths.map((path) => (
+              <PathPreview
+                key={path.id}
+                path={path}
+                selected={selectedPath === path.id}
+                onClick={() => onSetSelectedPath(path.id)}
               />
-              <p
-                className="mt-3 text-xs leading-6"
-                style={{ color: "#bfa9b2" }}
-              >
-                Examples: K, The version of me today, Unbothered, Soft Girl,
-                Main Character.
-              </p>
-            </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              data-ocid="journey.step1.primary_button"
-              onClick={() => sharedName.trim() && onSetStep(2)}
-              disabled={!sharedName.trim()}
+              data-ocid="journey.step2.cancel_button"
+              onClick={() => onSetStep(1)}
+              className="rounded-2xl border px-5 py-3 font-bold transition hover:opacity-80"
+              style={{
+                borderColor: "#76515e",
+                color: "#f4d6df",
+                backgroundColor: "transparent",
+              }}
+            >
+              Previous page
+            </button>
+            <button
+              type="button"
+              data-ocid="journey.step2.primary_button"
+              onClick={() => selectedPath && onSetStep(3)}
+              disabled={!selectedPath}
               className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
             >
-              Turn the page
+              Peel deeper
               <ChevronRight className="ml-2 h-4 w-4" />
             </button>
-          </motion.div>
-        )}
+          </div>
+        </motion.div>
+      )}
 
-        {/* Step 2: Entry intensity */}
-        {step === 2 && (
-          <motion.div
-            key="step2"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-6"
+      {/* Step 3: Expression method */}
+      {step === 3 && (
+        <motion.div
+          key="step3"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3 }}
+          className="space-y-6"
+        >
+          <div
+            className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+            style={{
+              borderColor: "#4a323c",
+              backgroundColor: "#24181d",
+              color: "#f0d7df",
+            }}
           >
-            <div
-              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
-              style={{
-                borderColor: "#4a323c",
-                backgroundColor: "#24181d",
-                color: "#f0d7df",
-              }}
+            <Feather className="mr-2 h-4 w-4" />
+            Expression method
+          </div>
+          <div>
+            <h2
+              className="text-3xl font-extrabold leading-tight font-display"
+              style={{ color: "#fff4f8" }}
             >
-              <BookOpen className="mr-2 h-4 w-4" />
-              Entry intensity
-            </div>
-            <div>
-              <h2
-                className="text-3xl font-extrabold leading-tight font-display"
-                style={{ color: "#fff4f8" }}
-              >
-                Where does the story begin, {sharedName}?
-              </h2>
-              <p
-                className="mt-3 max-w-2xl text-sm leading-7"
-                style={{ color: "#d5c4cb" }}
-              >
-                Start where you can handle. You can always peel deeper later.
-              </p>
-            </div>
-            <div className="grid gap-4">
-              {entryPaths.map((path) => (
-                <PathPreview
-                  key={path.id}
-                  path={path}
-                  selected={selectedPath === path.id}
-                  onClick={() => onSetSelectedPath(path.id)}
-                />
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                data-ocid="journey.step2.cancel_button"
-                onClick={() => onSetStep(1)}
-                className="rounded-2xl border px-5 py-3 font-bold transition hover:opacity-80"
-                style={{
-                  borderColor: "#76515e",
-                  color: "#f4d6df",
-                  backgroundColor: "transparent",
-                }}
-              >
-                Previous page
-              </button>
-              <button
-                type="button"
-                data-ocid="journey.step2.primary_button"
-                onClick={() => selectedPath && onSetStep(3)}
-                disabled={!selectedPath}
-                className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-              >
-                Peel deeper
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Step 3: Expression method */}
-        {step === 3 && (
-          <motion.div
-            key="step3"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-6"
-          >
-            <div
-              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
-              style={{
-                borderColor: "#4a323c",
-                backgroundColor: "#24181d",
-                color: "#f0d7df",
-              }}
+              How would you like to tell it?
+            </h2>
+            <p
+              className="mt-3 max-w-2xl text-sm leading-7"
+              style={{ color: "#d5c4cb" }}
             >
-              <Feather className="mr-2 h-4 w-4" />
-              Expression method
-            </div>
-            <div>
-              <h2
-                className="text-3xl font-extrabold leading-tight font-display"
-                style={{ color: "#fff4f8" }}
-              >
-                How would you like to tell it?
-              </h2>
-              <p
-                className="mt-3 max-w-2xl text-sm leading-7"
-                style={{ color: "#d5c4cb" }}
-              >
-                You chose{" "}
-                <span className="font-bold" style={{ color: "#efc1d0" }}>
-                  {activePath?.label}
-                </span>
-                . Now choose whether this chapter is spoken or written.
-              </p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {[
-                {
-                  id: "voice",
-                  icon: <Mic className="h-6 w-6" />,
-                  title: "Your very own TedTalk",
-                  subtitle: "Speak it out",
-                  desc: "For when typing feels like too much work and your truth comes out easier when you hear yourself say it.",
-                },
-                {
-                  id: "writing",
-                  icon: <PenTool className="h-6 w-6" />,
-                  title: "Hear ye Hear ye",
-                  subtitle: "Write it down",
-                  desc: "For when you want to shape the thought, slow it down, and let the page hold the weight.",
-                },
-              ].map((mode) => (
-                <button
-                  type="button"
-                  key={mode.id}
-                  data-ocid={`journey.mode_${mode.id}.toggle`}
-                  onClick={() => onSetSelectedMode(mode.id)}
-                  className="rounded-[28px] border p-6 text-left transition"
-                  style={{
-                    borderColor:
-                      selectedMode === mode.id ? "#efc1d0" : "#3d2a32",
-                    backgroundColor:
-                      selectedMode === mode.id ? "#2a1d23" : "#24181d",
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="rounded-2xl p-3"
-                      style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
-                    >
-                      {mode.icon}
-                    </div>
-                    <div>
-                      <p
-                        className="text-xl font-extrabold"
-                        style={{ color: "#fff4f8" }}
-                      >
-                        {mode.title}
-                      </p>
-                      <p
-                        className="text-sm font-semibold"
-                        style={{ color: "#efc1d0" }}
-                      >
-                        {mode.subtitle}
-                      </p>
-                    </div>
-                  </div>
-                  <p
-                    className="mt-4 text-sm leading-6"
-                    style={{ color: "#d5c4cb" }}
-                  >
-                    {mode.desc}
-                  </p>
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-3">
+              You chose{" "}
+              <span className="font-bold" style={{ color: "#efc1d0" }}>
+                {activePath?.label}
+              </span>
+              . Now choose whether this chapter is spoken or written.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              {
+                id: "voice",
+                icon: <Mic className="h-6 w-6" />,
+                title: "Your very own TedTalk",
+                subtitle: "Speak it out",
+                desc: "For when typing feels like too much work and your truth comes out easier when you hear yourself say it.",
+              },
+              {
+                id: "writing",
+                icon: <PenTool className="h-6 w-6" />,
+                title: "Hear ye Hear ye",
+                subtitle: "Write it down",
+                desc: "For when you want to shape the thought, slow it down, and let the page hold the weight.",
+              },
+            ].map((mode) => (
               <button
                 type="button"
-                data-ocid="journey.step3.cancel_button"
-                onClick={() => onSetStep(2)}
-                className="rounded-2xl border px-5 py-3 font-bold transition hover:opacity-80"
+                key={mode.id}
+                data-ocid={`journey.mode_${mode.id}.toggle`}
+                onClick={() => onSetSelectedMode(mode.id)}
+                className="rounded-[28px] border p-6 text-left transition"
                 style={{
-                  borderColor: "#76515e",
-                  color: "#f4d6df",
-                  backgroundColor: "transparent",
+                  borderColor: selectedMode === mode.id ? "#efc1d0" : "#3d2a32",
+                  backgroundColor:
+                    selectedMode === mode.id ? "#2a1d23" : "#24181d",
                 }}
-              >
-                Previous page
-              </button>
-              <button
-                type="button"
-                data-ocid="journey.step3.primary_button"
-                disabled={!selectedMode}
-                onClick={() => selectedMode && onSetStep(4)}
-                className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-              >
-                Continue to chapter one
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Step 4: Chapter reflection */}
-        {step === 4 && activePath && (
-          <motion.div
-            key={`step4-${chapterIndex}`}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-6"
-          >
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                data-ocid="journey.step4.cancel_button"
-                onClick={() => onSetStep(3)}
-                className="rounded-full border p-2 transition hover:opacity-80"
-                style={{
-                  borderColor: "#4a323c",
-                  backgroundColor: "#24181d",
-                  color: "#f0d7df",
-                }}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-              <div
-                className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
-                style={{
-                  borderColor: "#4a323c",
-                  backgroundColor: "#24181d",
-                  color: "#f0d7df",
-                }}
-              >
-                <BookOpen className="mr-2 h-4 w-4" />
-                {activePath.chapterTitle}
-              </div>
-            </div>
-            <div>
-              <p
-                className="text-sm font-semibold uppercase tracking-[0.2em]"
-                style={{ color: "#d9a6b7" }}
-              >
-                Chapter {chapterIndex + 1} of {activePath.questions.length}
-              </p>
-              <h2
-                className="mt-2 text-3xl font-extrabold leading-tight font-display"
-                style={{ color: "#fff4f8" }}
-              >
-                {activeQuestion}
-              </h2>
-              <p
-                className="mt-3 max-w-2xl text-sm leading-7"
-                style={{ color: "#d5c4cb" }}
-              >
-                {selectedMode === "voice"
-                  ? `${sharedName}, say it out loud first. Let it be messy before it is meaningful.`
-                  : `${sharedName}, write like no one is grading this. Let the sentence land before you edit it.`}
-              </p>
-            </div>
-
-            {selectedMode === "voice" ? (
-              <div
-                className="rounded-[28px] border p-5"
-                style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="rounded-2xl p-3"
-                      style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
-                    >
-                      <Mic className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <p
-                        className="text-xl font-extrabold"
-                        style={{ color: "#fff4f8" }}
-                      >
-                        Your very own TedTalk
-                      </p>
-                      <p
-                        className="text-sm font-semibold"
-                        style={{ color: "#efc1d0" }}
-                      >
-                        Live voice capture
-                      </p>
-                    </div>
-                  </div>
-                  {voiceSupported &&
-                    (!listening ? (
-                      <button
-                        type="button"
-                        data-ocid="journey.mic.primary_button"
-                        onClick={startListening}
-                        className="inline-flex items-center rounded-2xl px-4 py-3 font-extrabold transition hover:opacity-90"
-                        style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-                      >
-                        <PlayCircle className="mr-2 h-4 w-4" />
-                        Start mic
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        data-ocid="journey.mic.stop.button"
-                        onClick={stopListening}
-                        className="inline-flex items-center rounded-2xl px-4 py-3 font-extrabold"
-                        style={{ backgroundColor: "#ff6b8a", color: "#fff" }}
-                      >
-                        <PauseCircle className="mr-2 h-4 w-4" />
-                        Stop mic
-                      </button>
-                    ))}
-                </div>
-                {!voiceSupported && (
-                  <div
-                    className="mt-4 rounded-2xl border p-4 text-sm leading-6"
-                    style={{
-                      borderColor: "#7a3b4c",
-                      backgroundColor: "#3a1f28",
-                      color: "#ffd9e2",
-                    }}
-                    data-ocid="journey.voice.error_state"
-                  >
-                    Voice capture is not available in this browser. Chrome
-                    usually works best.
-                  </div>
-                )}
-                {voiceError && (
-                  <div
-                    className="mt-4 rounded-2xl border p-4 text-sm leading-6"
-                    style={{
-                      borderColor: "#7a3b4c",
-                      backgroundColor: "#3a1f28",
-                      color: "#ffd9e2",
-                    }}
-                    data-ocid="journey.voice.error_state"
-                  >
-                    {voiceError}
-                  </div>
-                )}
-                <div
-                  className="mt-5 rounded-2xl border p-4"
-                  style={{ borderColor: "#4a323c", backgroundColor: "#2b2025" }}
-                >
-                  <p className="text-sm font-bold" style={{ color: "#f1d8df" }}>
-                    Transcript
-                  </p>
-                  <p
-                    className="mt-3 min-h-[180px] whitespace-pre-wrap text-sm leading-6"
-                    style={{ color: "#dbc8cf" }}
-                  >
-                    {spokenTranscript ||
-                      "Start speaking and your words will appear here."}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div
-                className="rounded-[28px] border p-5"
-                style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
               >
                 <div className="flex items-center gap-3">
                   <div
                     className="rounded-2xl p-3"
                     style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
                   >
-                    <PenTool className="h-6 w-6" />
+                    {mode.icon}
                   </div>
                   <div>
                     <p
                       className="text-xl font-extrabold"
                       style={{ color: "#fff4f8" }}
                     >
-                      Hear ye Hear ye
+                      {mode.title}
                     </p>
                     <p
                       className="text-sm font-semibold"
                       style={{ color: "#efc1d0" }}
                     >
-                      Chapter response
+                      {mode.subtitle}
                     </p>
                   </div>
                 </div>
-                <textarea
-                  data-ocid="journey.chapter.textarea"
-                  value={typedResponses[chapterIndex] ?? ""}
-                  onChange={(e) => handleTypedChange(e.target.value)}
-                  placeholder="Write the first honest version, not the polished one."
-                  className="mt-5 min-h-[220px] w-full rounded-2xl border px-4 py-3 text-white outline-none"
-                  style={{
-                    borderColor: "#4a323c",
-                    backgroundColor: "#2b2025",
-                  }}
-                />
-              </div>
-            )}
-
-            {currentResponse.trim() && (
-              <div
-                className="rounded-[28px] border p-5"
-                style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
-              >
                 <p
-                  className="text-sm font-bold uppercase tracking-[0.2em]"
-                  style={{ color: "#d9a6b7" }}
+                  className="mt-4 text-sm leading-6"
+                  style={{ color: "#d5c4cb" }}
                 >
-                  Peel deeper
+                  {mode.desc}
                 </p>
-                <div className="mt-4 space-y-3">
-                  {followups.map((item) => (
-                    <div
-                      key={item}
-                      className="rounded-2xl p-4 text-sm leading-6"
-                      style={{ backgroundColor: "#2b2025", color: "#dbc8cf" }}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              data-ocid="journey.step3.cancel_button"
+              onClick={() => onSetStep(2)}
+              className="rounded-2xl border px-5 py-3 font-bold transition hover:opacity-80"
+              style={{
+                borderColor: "#76515e",
+                color: "#f4d6df",
+                backgroundColor: "transparent",
+              }}
+            >
+              Previous page
+            </button>
+            <button
+              type="button"
+              data-ocid="journey.step3.primary_button"
+              disabled={!selectedMode}
+              onClick={() => selectedMode && onSetStep(4)}
+              className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+            >
+              Continue to chapter one
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Step 4: Chapter reflection */}
+      {step === 4 && activePath && (
+        <motion.div
+          key={`step4-${chapterIndex}`}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3 }}
+          className="space-y-6"
+        >
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              data-ocid="journey.step4.cancel_button"
+              onClick={() => onSetStep(3)}
+              className="rounded-full border p-2 transition hover:opacity-80"
+              style={{
+                borderColor: "#4a323c",
+                backgroundColor: "#24181d",
+                color: "#f0d7df",
+              }}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div
+              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+              style={{
+                borderColor: "#4a323c",
+                backgroundColor: "#24181d",
+                color: "#f0d7df",
+              }}
+            >
+              <BookOpen className="mr-2 h-4 w-4" />
+              {activePath.chapterTitle}
+            </div>
+          </div>
+          <div>
+            <p
+              className="text-sm font-semibold uppercase tracking-[0.2em]"
+              style={{ color: "#d9a6b7" }}
+            >
+              Chapter {chapterIndex + 1} of {activePath.questions.length}
+            </p>
+            <h2
+              className="mt-2 text-3xl font-extrabold leading-tight font-display"
+              style={{ color: "#fff4f8" }}
+            >
+              {activeQuestion}
+            </h2>
+            <p
+              className="mt-3 max-w-2xl text-sm leading-7"
+              style={{ color: "#d5c4cb" }}
+            >
+              {selectedMode === "voice"
+                ? `${sharedName}, say it out loud first. Let it be messy before it is meaningful.`
+                : `${sharedName}, write like no one is grading this. Let the sentence land before you edit it.`}
+            </p>
+          </div>
+
+          {selectedMode === "voice" ? (
+            <div
+              className="rounded-[28px] border p-5"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="rounded-2xl p-3"
+                    style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
+                  >
+                    <Mic className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p
+                      className="text-xl font-extrabold"
+                      style={{ color: "#fff4f8" }}
                     >
-                      • {item}
-                    </div>
-                  ))}
+                      Your very own TedTalk
+                    </p>
+                    <p
+                      className="text-sm font-semibold"
+                      style={{ color: "#efc1d0" }}
+                    >
+                      Live voice capture
+                    </p>
+                  </div>
+                </div>
+                {voiceSupported && (
+                  <button
+                    type="button"
+                    data-ocid="journey.mic.toggle"
+                    onClick={() =>
+                      listening ? stopListening() : startListening()
+                    }
+                    className="inline-flex items-center gap-2 rounded-2xl border px-4 py-3 font-bold transition"
+                    style={{
+                      borderColor: listening ? "#efc1d0" : "#4a323c",
+                      backgroundColor: listening ? "#2a1d23" : "#2b2025",
+                      color: listening ? "#efc1d0" : "#a08090",
+                      boxShadow: listening
+                        ? "0 0 0 3px rgba(239,193,208,0.25)"
+                        : "none",
+                    }}
+                  >
+                    <Mic
+                      className={
+                        listening ? "h-4 w-4 animate-pulse" : "h-4 w-4"
+                      }
+                    />
+                    {listening ? "Mic on" : "Mic off"}
+                  </button>
+                )}
+              </div>
+              {!voiceSupported && (
+                <div
+                  className="mt-4 rounded-2xl border p-4 text-sm leading-6"
+                  style={{
+                    borderColor: "#7a3b4c",
+                    backgroundColor: "#3a1f28",
+                    color: "#ffd9e2",
+                  }}
+                  data-ocid="journey.voice.error_state"
+                >
+                  Voice capture is not available in this browser. Chrome usually
+                  works best.
+                </div>
+              )}
+              {voiceError && (
+                <div
+                  className="mt-4 rounded-2xl border p-4 text-sm leading-6"
+                  style={{
+                    borderColor: "#7a3b4c",
+                    backgroundColor: "#3a1f28",
+                    color: "#ffd9e2",
+                  }}
+                  data-ocid="journey.voice.error_state"
+                >
+                  {voiceError}
+                </div>
+              )}
+              <div
+                className="mt-5 rounded-2xl border p-4"
+                style={{ borderColor: "#4a323c", backgroundColor: "#2b2025" }}
+              >
+                <p className="text-sm font-bold" style={{ color: "#f1d8df" }}>
+                  Transcript
+                </p>
+                <p
+                  className="mt-3 min-h-[180px] whitespace-pre-wrap text-sm leading-6"
+                  style={{ color: "#dbc8cf" }}
+                >
+                  {spokenTranscript ||
+                    "Start speaking and your words will appear here."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="rounded-[28px] border p-5"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-2xl p-3"
+                  style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
+                >
+                  <PenTool className="h-6 w-6" />
+                </div>
+                <div>
+                  <p
+                    className="text-xl font-extrabold"
+                    style={{ color: "#fff4f8" }}
+                  >
+                    Hear ye Hear ye
+                  </p>
+                  <p
+                    className="text-sm font-semibold"
+                    style={{ color: "#efc1d0" }}
+                  >
+                    Chapter response
+                  </p>
                 </div>
               </div>
-            )}
+              <textarea
+                data-ocid="journey.chapter.textarea"
+                value={typedResponses[chapterIndex] ?? ""}
+                onChange={(e) => handleTypedChange(e.target.value)}
+                placeholder="Write the first honest version, not the polished one."
+                className="mt-5 min-h-[220px] w-full rounded-2xl border px-4 py-3 text-white outline-none"
+                style={{
+                  borderColor: "#4a323c",
+                  backgroundColor: "#2b2025",
+                }}
+              />
+            </div>
+          )}
 
+          {/* Inline live pattern notices */}
+          {livePatterns.length > 0 && !inConversation && (
+            <div
+              className="rounded-[24px] border p-4"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#1e1519" }}
+            >
+              <p
+                className="text-xs font-bold uppercase tracking-[0.18em] mb-3"
+                style={{ color: "#d9a6b7" }}
+              >
+                Pattern notices
+              </p>
+              <div className="space-y-2">
+                {livePatterns.map((p) => (
+                  <div
+                    key={p.id}
+                    className="rounded-2xl p-3"
+                    style={{ backgroundColor: "#24181d" }}
+                  >
+                    <p
+                      className="text-xs font-bold uppercase tracking-wide"
+                      style={{ color: "#efc1d0" }}
+                    >
+                      {p.name}
+                    </p>
+                    <p
+                      className="mt-1 text-xs leading-5"
+                      style={{ color: "#dbc8cf" }}
+                    >
+                      {p.advice}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Start conversation or continue writing */}
+          {!inConversation ? (
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
                 data-ocid="journey.chapter.primary_button"
                 disabled={!canAdvance}
-                onClick={saveAndAdvance}
+                onClick={startConversation}
                 className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
               >
@@ -1621,485 +2479,507 @@ function BookJourney({
                 <ChevronRight className="ml-2 h-4 w-4" />
               </button>
             </div>
-          </motion.div>
-        )}
-
-        {/* Step 5: End of chapter recap */}
-        {step === 5 && activePath && (
-          <motion.div
-            key="step5"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-6"
-          >
+          ) : (
+            /* Conversation thread */
             <div
-              className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
-              style={{
-                borderColor: "#4a323c",
-                backgroundColor: "#24181d",
-                color: "#f0d7df",
-              }}
+              className="rounded-[28px] border p-5 space-y-4"
+              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
             >
-              <BookOpen className="mr-2 h-4 w-4" />
-              End of chapter
-            </div>
-            <div>
-              <h2
-                className="text-3xl font-extrabold leading-tight font-display"
-                style={{ color: "#fff4f8" }}
-              >
-                You made it through the first layer, {sharedName}.
-              </h2>
               <p
-                className="mt-3 max-w-2xl text-sm leading-7"
-                style={{ color: "#d5c4cb" }}
+                className="text-xs font-bold uppercase tracking-[0.2em]"
+                style={{ color: "#d9a6b7" }}
               >
-                This chapter stayed in{" "}
-                <span className="font-bold" style={{ color: "#efc1d0" }}>
-                  {activePath.label}
-                </span>
-                . Here's what got said out loud.
+                Conversation
               </p>
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {conversationThread.map((entry, entryIdx) => (
+                  <div
+                    key={`${entry.role}-${entryIdx}-${entry.text.slice(0, 8)}`}
+                    className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
+                      entry.role === "prompt" ? "mr-8" : "ml-8"
+                    }`}
+                    style={{
+                      backgroundColor:
+                        entry.role === "prompt" ? "#2b2025" : "#331f28",
+                      color: entry.role === "prompt" ? "#dbc8cf" : "#f6dae3",
+                      borderLeft:
+                        entry.role === "prompt"
+                          ? "3px solid #4a323c"
+                          : "3px solid #efc1d0",
+                    }}
+                  >
+                    {entry.text}
+                  </div>
+                ))}
+                <div ref={threadEndRef} />
+              </div>
+              <div className="flex gap-3">
+                {selectedMode === "voice" ? (
+                  <div className="flex-1">
+                    <p className="text-xs mb-2" style={{ color: "#bfa9b2" }}>
+                      Speak your reply, then send
+                    </p>
+                    <textarea
+                      data-ocid="journey.thread.textarea"
+                      value={spokenTranscript || threadInput}
+                      onChange={(e) => setThreadInput(e.target.value)}
+                      placeholder="Your reply..."
+                      rows={3}
+                      className="w-full rounded-2xl border px-4 py-3 text-white outline-none text-sm"
+                      style={{
+                        borderColor: "#4a323c",
+                        backgroundColor: "#2b2025",
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <textarea
+                    data-ocid="journey.thread.textarea"
+                    value={threadInput}
+                    onChange={(e) => {
+                      setThreadInput(e.target.value);
+                      onCrisisDetected(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        submitThreadReply();
+                      }
+                    }}
+                    placeholder="Reply here... (Enter to send)"
+                    rows={3}
+                    className="flex-1 rounded-2xl border px-4 py-3 text-white outline-none text-sm"
+                    style={{
+                      borderColor: "#4a323c",
+                      backgroundColor: "#2b2025",
+                    }}
+                  />
+                )}
+                <div className="flex flex-col gap-2 justify-end">
+                  <button
+                    type="button"
+                    data-ocid="journey.thread.submit_button"
+                    onClick={() => {
+                      if (selectedMode === "voice" && spokenTranscript) {
+                        setThreadInput(spokenTranscript);
+                        setSpokenTranscript("");
+                      }
+                      submitThreadReply();
+                    }}
+                    disabled={
+                      selectedMode === "voice"
+                        ? !spokenTranscript.trim() && !threadInput.trim()
+                        : !threadInput.trim()
+                    }
+                    className="rounded-2xl px-4 py-2 font-bold text-sm transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+              <div
+                className="flex flex-wrap gap-3 pt-2 border-t"
+                style={{ borderColor: "#3d2a32" }}
+              >
+                <button
+                  type="button"
+                  data-ocid="journey.thread.move_on.button"
+                  onClick={finishChapterAndAdvance}
+                  className="text-sm rounded-2xl px-4 py-2 font-bold border transition hover:opacity-80"
+                  style={{
+                    borderColor: "#76515e",
+                    color: "#f4d6df",
+                    backgroundColor: "transparent",
+                  }}
+                >
+                  Ready to move on →
+                </button>
+                {(() => {
+                  const userMessages = conversationThread.filter(
+                    (e) => e.role === "user",
+                  );
+                  const lastUser = userMessages[userMessages.length - 1];
+                  const showContinuePrompt =
+                    userMessages.length >= 4 ||
+                    (lastUser &&
+                      lastUser.text.length > 80 &&
+                      !vagueSignals.test(lastUser.text) &&
+                      !minimizingSignals.test(lastUser.text));
+                  return showContinuePrompt ? (
+                    <p
+                      className="text-xs self-center"
+                      style={{ color: "#bfa9b2" }}
+                    >
+                      I think we got somewhere. Continue when you're ready.
+                    </p>
+                  ) : null;
+                })()}
+              </div>
             </div>
+          )}
+        </motion.div>
+      )}
 
-            {/* Chapter recap */}
-            <div className="space-y-4" data-ocid="journey.chapters.list">
-              {savedChapters.length === 0 ? (
+      {/* Step 5: End of chapter recap */}
+      {step === 5 && activePath && (
+        <motion.div
+          key="step5"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3 }}
+          className="space-y-6"
+        >
+          <div
+            className="inline-flex items-center rounded-full border px-4 py-2 text-sm"
+            style={{
+              borderColor: "#4a323c",
+              backgroundColor: "#24181d",
+              color: "#f0d7df",
+            }}
+          >
+            <BookOpen className="mr-2 h-4 w-4" />
+            End of chapter
+          </div>
+          <div>
+            <h2
+              className="text-3xl font-extrabold leading-tight font-display"
+              style={{ color: "#fff4f8" }}
+            >
+              You made it through the first layer, {sharedName}.
+            </h2>
+            <p
+              className="mt-3 max-w-2xl text-sm leading-7"
+              style={{ color: "#d5c4cb" }}
+            >
+              This chapter stayed in{" "}
+              <span className="font-bold" style={{ color: "#efc1d0" }}>
+                {activePath.label}
+              </span>
+              . Here's what got said out loud.
+            </p>
+          </div>
+
+          {/* Chapter recap */}
+          <div className="space-y-4" data-ocid="journey.chapters.list">
+            {savedChapters.length === 0 ? (
+              <div
+                className="rounded-[28px] border p-5 text-sm"
+                style={{
+                  borderColor: "#3d2a32",
+                  backgroundColor: "#24181d",
+                  color: "#dbc8cf",
+                }}
+                data-ocid="journey.chapters.empty_state"
+              >
+                No responses saved yet.
+              </div>
+            ) : (
+              savedChapters.map((item, i) => (
                 <div
-                  className="rounded-[28px] border p-5 text-sm"
+                  key={item.chapter}
+                  className="rounded-[28px] border p-5"
                   style={{
                     borderColor: "#3d2a32",
                     backgroundColor: "#24181d",
-                    color: "#dbc8cf",
                   }}
-                  data-ocid="journey.chapters.empty_state"
+                  data-ocid={`journey.chapters.item.${i + 1}`}
                 >
-                  No responses saved yet.
-                </div>
-              ) : (
-                savedChapters.map((item, i) => (
-                  <div
-                    key={item.chapter}
-                    className="rounded-[28px] border p-5"
-                    style={{
-                      borderColor: "#3d2a32",
-                      backgroundColor: "#24181d",
-                    }}
-                    data-ocid={`journey.chapters.item.${i + 1}`}
-                  >
-                    <p
-                      className="text-sm font-bold uppercase tracking-[0.2em]"
-                      style={{ color: "#d9a6b7" }}
-                    >
-                      Chapter {item.chapter}
-                    </p>
-                    <p
-                      className="mt-3 text-lg font-extrabold font-display"
-                      style={{ color: "#fff4f8" }}
-                    >
-                      {item.question}
-                    </p>
-                    <p
-                      className="mt-3 whitespace-pre-wrap text-sm leading-7"
-                      style={{ color: "#dbc8cf" }}
-                    >
-                      {item.response}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Pattern detection */}
-            <div
-              className="rounded-[28px] border p-5"
-              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
-            >
-              <p
-                className="text-sm font-bold uppercase tracking-[0.2em] mb-4"
-                style={{ color: "#d9a6b7" }}
-              >
-                Pattern reveal
-              </p>
-              {detectedPatterns.length === 0 ? (
-                <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
-                  No strong pattern detected yet. Keep going.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {detectedPatterns.map((p) => (
-                    <div
-                      key={p.id}
-                      className="rounded-2xl p-4"
-                      style={{ backgroundColor: "#2b2025" }}
-                    >
-                      <p className="font-bold" style={{ color: "#f6dae3" }}>
-                        {p.name}
-                      </p>
-                      <p
-                        className="mt-1 text-sm leading-6"
-                        style={{ color: "#dbc8cf" }}
-                      >
-                        {p.advice}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Adaptive next step */}
-            <div
-              className="rounded-[28px] border p-5"
-              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="h-4 w-4" style={{ color: "#efc1d0" }} />
-                <p
-                  className="text-sm font-bold uppercase tracking-[0.2em]"
-                  style={{ color: "#d9a6b7" }}
-                >
-                  Adaptive next step
-                </p>
-              </div>
-              <div
-                className="rounded-2xl p-4 mb-4"
-                style={{ backgroundColor: "#2b2025" }}
-              >
-                <p
-                  className="font-bold capitalize"
-                  style={{ color: "#fff4f8" }}
-                >
-                  {decision.action === "deepen"
-                    ? "Go deeper"
-                    : decision.action === "shift"
-                      ? "Shift the lens"
-                      : "Stay in this layer"}
-                </p>
-                <p className="text-sm mt-1" style={{ color: "#dbc8cf" }}>
-                  {decision.reason}
-                </p>
-                {decision.focus && (
                   <p
-                    className="text-xs mt-2 font-semibold"
+                    className="text-sm font-bold uppercase tracking-[0.2em]"
                     style={{ color: "#d9a6b7" }}
                   >
-                    Focus: {decision.focus}
+                    Chapter {item.chapter}
                   </p>
-                )}
-              </div>
-              <div className="space-y-3">
-                {nextQuestions.map((q) => (
-                  <div
-                    key={q}
-                    className="rounded-2xl p-4 text-sm leading-6"
-                    style={{ backgroundColor: "#2b2025", color: "#dbc8cf" }}
+                  <p
+                    className="mt-3 text-lg font-extrabold font-display"
+                    style={{ color: "#fff4f8" }}
                   >
-                    • {q}
+                    {item.question}
+                  </p>
+                  <p
+                    className="mt-3 whitespace-pre-wrap text-sm leading-7"
+                    style={{ color: "#dbc8cf" }}
+                  >
+                    {item.response}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Pattern detection */}
+          <div
+            className="rounded-[28px] border p-5"
+            style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+          >
+            <p
+              className="text-sm font-bold uppercase tracking-[0.2em] mb-4"
+              style={{ color: "#d9a6b7" }}
+            >
+              Pattern reveal
+            </p>
+            {detectedPatterns.length === 0 ? (
+              <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
+                No strong pattern detected yet. Keep going.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {detectedPatterns.map((p) => (
+                  <div
+                    key={p.id}
+                    className="rounded-2xl p-4"
+                    style={{ backgroundColor: "#2b2025" }}
+                  >
+                    <p className="font-bold" style={{ color: "#f6dae3" }}>
+                      {p.name}
+                    </p>
+                    <p
+                      className="mt-1 text-sm leading-6"
+                      style={{ color: "#dbc8cf" }}
+                    >
+                      {p.advice}
+                    </p>
                   </div>
                 ))}
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* Profile */}
-            {profile.sessions > 0 && (
-              <div
-                className="rounded-[28px] border p-5"
-                style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
+          {/* Adaptive next step */}
+          <div
+            className="rounded-[28px] border p-5"
+            style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="h-4 w-4" style={{ color: "#efc1d0" }} />
+              <p
+                className="text-sm font-bold uppercase tracking-[0.2em]"
+                style={{ color: "#d9a6b7" }}
               >
+                Adaptive next step
+              </p>
+            </div>
+            <div
+              className="rounded-2xl p-4 mb-4"
+              style={{ backgroundColor: "#2b2025" }}
+            >
+              <p className="font-bold capitalize" style={{ color: "#fff4f8" }}>
+                {decision.action === "deepen"
+                  ? "Go deeper"
+                  : decision.action === "shift"
+                    ? "Shift the lens"
+                    : "Stay in this layer"}
+              </p>
+              <p className="text-sm mt-1" style={{ color: "#dbc8cf" }}>
+                {decision.reason}
+              </p>
+              {decision.focus && (
                 <p
-                  className="text-sm font-bold uppercase tracking-[0.2em] mb-3"
+                  className="text-xs mt-2 font-semibold"
                   style={{ color: "#d9a6b7" }}
                 >
-                  Your pattern profile
+                  Focus: {decision.focus}
                 </p>
-                <p className="text-xs mb-2" style={{ color: "#bfa9b2" }}>
-                  Sessions: {profile.sessions}
-                </p>
-                {Object.entries(profile.counts).length > 0 && (
-                  <div className="space-y-2">
-                    {Object.entries(profile.counts).map(([k, v]) => (
-                      <div
-                        key={k}
-                        className="flex items-center justify-between"
-                      >
-                        <span
-                          className="text-sm capitalize"
-                          style={{ color: "#dbc8cf" }}
-                        >
-                          {k}
-                        </span>
-                        <span
-                          className="text-xs font-bold rounded-full px-2 py-0.5"
-                          style={{
-                            backgroundColor: "#2b2025",
-                            color: "#efc1d0",
-                          }}
-                        >
-                          {v}×
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
+            <div className="space-y-3">
+              {nextQuestions.map((q) => (
+                <div
+                  key={q}
+                  className="rounded-2xl p-4 text-sm leading-6"
+                  style={{ backgroundColor: "#2b2025", color: "#dbc8cf" }}
+                >
+                  • {q}
+                </div>
+              ))}
+            </div>
+          </div>
 
-            {/* Feedback */}
+          {/* Profile */}
+          {profile.sessions > 0 && (
             <div
               className="rounded-[28px] border p-5"
               style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
             >
               <p
-                className="text-[18px] font-extrabold mb-2 font-display"
-                style={{ color: "#fff4f8" }}
+                className="text-sm font-bold uppercase tracking-[0.2em] mb-3"
+                style={{ color: "#d9a6b7" }}
               >
-                Feedback
+                Your pattern profile
               </p>
-              <p className="text-sm mb-3" style={{ color: "#dbc8cf" }}>
-                What felt missing or impactful?
+              <p className="text-xs mb-2" style={{ color: "#bfa9b2" }}>
+                Sessions: {profile.sessions}
               </p>
-              <textarea
-                data-ocid="journey.feedback.textarea"
-                value={feedbackText}
-                onChange={(e) => onFeedbackChange(e.target.value)}
-                placeholder="Your feedback helps shape this app"
-                rows={4}
-                className="w-full rounded-[18px] px-4 py-3 text-sm border outline-none"
-                style={{
-                  backgroundColor: "#2b2025",
-                  borderColor: "#4a323c",
-                  color: "#fff",
-                }}
-              />
-              <button
-                type="button"
-                data-ocid="journey.feedback.submit_button"
-                onClick={onSubmitFeedback}
-                className="mt-3 inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90"
-                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-              >
-                Submit feedback
-              </button>
-              {feedbackEntries.length > 0 && (
-                <div className="mt-4 space-y-3">
-                  {feedbackEntries.slice(0, 3).map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="rounded-[18px] p-4"
-                      style={{ backgroundColor: "#2b2025" }}
-                    >
-                      <p
-                        className="text-xs font-bold uppercase tracking-wide mb-1"
-                        style={{ color: "#d9a6b7" }}
-                      >
-                        {entry.userName} ·{" "}
-                        {new Date(entry.createdAt).toLocaleDateString()}
-                      </p>
-                      <p
-                        className="text-sm leading-6"
+              {Object.entries(profile.counts).length > 0 && (
+                <div className="space-y-2">
+                  {Object.entries(profile.counts).map(([k, v]) => (
+                    <div key={k} className="flex items-center justify-between">
+                      <span
+                        className="text-sm capitalize"
                         style={{ color: "#dbc8cf" }}
                       >
-                        {entry.message}
-                      </p>
+                        {k}
+                      </span>
+                      <span
+                        className="text-xs font-bold rounded-full px-2 py-0.5"
+                        style={{
+                          backgroundColor: "#2b2025",
+                          color: "#efc1d0",
+                        }}
+                      >
+                        {v}×
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
+          )}
 
-            {/* Session safety */}
-            <div
-              className="rounded-[28px] border p-5"
-              style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
-            >
-              <p
-                className="text-[18px] font-extrabold mb-2 font-display"
-                style={{ color: "#fff4f8" }}
-              >
-                Session safety
-              </p>
-              <p className="text-sm mb-1" style={{ color: "#dbc8cf" }}>
-                Crisis flags this session: {crisisCount}
-              </p>
-              <p className="text-sm mb-3" style={{ color: "#dbc8cf" }}>
-                Location: {locationLabel}
-              </p>
-              <button
-                type="button"
-                data-ocid="journey.location.button"
-                onClick={onShareLocation}
-                className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80 mb-2"
-                style={{
-                  borderColor: "#76515e",
-                  color: "#f4d6df",
-                  backgroundColor: "transparent",
-                }}
-              >
-                Share live location for this session
-              </button>
-              <button
-                type="button"
-                data-ocid="journey.end_session.button"
-                onClick={onEndSession}
-                className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80 mb-2"
-                style={{
-                  borderColor: "#76515e",
-                  color: "#f4d6df",
-                  backgroundColor: "transparent",
-                }}
-              >
-                End session and clear session-only data
-              </button>
-              <button
-                type="button"
-                data-ocid="journey.clear_data.delete_button"
-                onClick={onClearAllData}
-                className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80"
-                style={{
-                  borderColor: "#76515e",
-                  color: "#f4d6df",
-                  backgroundColor: "transparent",
-                }}
-              >
-                Clear all local data
-              </button>
-            </div>
-
-            <button
-              type="button"
-              data-ocid="journey.step5.primary_button"
-              onClick={() => {
-                onSetChapterIndex(0);
-                onSetSavedChapters(() => []);
-                onSetTypedResponses(() => ({}));
-                onSetStep(4);
-              }}
-              className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90"
-              style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-            >
-              Read it again
-              <ChevronRight className="ml-2 h-4 w-4" />
-            </button>
-          </motion.div>
-        )}
-      </section>
-
-      {/* Sidebar */}
-      <aside className="space-y-6">
-        <div
-          className="rounded-[32px] border p-6 shadow-2xl"
-          style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
-        >
-          <h3
-            className="text-xl font-extrabold font-display mb-4"
-            style={{ color: "#fff4f8" }}
-          >
-            Current selections
-          </h3>
-          <div className="space-y-3">
-            {[
-              { label: "Shared name", value: sidebarDisplay.name },
-              { label: "Story beginning", value: sidebarDisplay.beginning },
-              { label: "Expression style", value: sidebarDisplay.style },
-              { label: "Chapter progress", value: sidebarDisplay.progress },
-            ].map(({ label, value }) => (
-              <div
-                key={label}
-                className="rounded-2xl p-4"
-                style={{ backgroundColor: "#24181d" }}
-              >
-                <p
-                  className="text-xs font-bold uppercase tracking-wide"
-                  style={{ color: "#d9a6b7" }}
-                >
-                  {label}
-                </p>
-                <p
-                  className="mt-2 text-sm leading-6"
-                  style={{ color: "#f6dae3" }}
-                >
-                  {value}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {profile.sessions > 0 && (
+          {/* Feedback */}
           <div
-            className="rounded-[32px] border p-6 shadow-2xl"
-            style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
+            className="rounded-[28px] border p-5"
+            style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
           >
-            <h3
-              className="text-xl font-extrabold font-display mb-3"
+            <p
+              className="text-[18px] font-extrabold mb-2 font-display"
               style={{ color: "#fff4f8" }}
             >
-              Pattern profile
-            </h3>
-            <p className="text-xs mb-3" style={{ color: "#bfa9b2" }}>
-              {profile.sessions} session{profile.sessions !== 1 ? "s" : ""}{" "}
-              completed
+              Feedback
             </p>
-            {Object.entries(profile.counts).length > 0 ? (
-              <div className="space-y-2">
-                {Object.entries(profile.counts).map(([k, v]) => (
+            <p className="text-sm mb-3" style={{ color: "#dbc8cf" }}>
+              What felt missing or impactful?
+            </p>
+            <textarea
+              data-ocid="journey.feedback.textarea"
+              value={feedbackText}
+              onChange={(e) => onFeedbackChange(e.target.value)}
+              placeholder="Your feedback helps shape this app"
+              rows={4}
+              className="w-full rounded-[18px] px-4 py-3 text-sm border outline-none"
+              style={{
+                backgroundColor: "#2b2025",
+                borderColor: "#4a323c",
+                color: "#fff",
+              }}
+            />
+            <button
+              type="button"
+              data-ocid="journey.feedback.submit_button"
+              onClick={onSubmitFeedback}
+              className="mt-3 inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90"
+              style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+            >
+              Submit feedback
+            </button>
+            {feedbackEntries.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {feedbackEntries.slice(0, 3).map((entry) => (
                   <div
-                    key={k}
-                    className="flex items-center justify-between rounded-2xl px-3 py-2"
-                    style={{ backgroundColor: "#24181d" }}
+                    key={entry.id}
+                    className="rounded-[18px] p-4"
+                    style={{ backgroundColor: "#2b2025" }}
                   >
-                    <span
-                      className="text-sm capitalize"
+                    <p
+                      className="text-xs font-bold uppercase tracking-wide mb-1"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      {entry.userName} ·{" "}
+                      {new Date(entry.createdAt).toLocaleDateString()}
+                    </p>
+                    <p
+                      className="text-sm leading-6"
                       style={{ color: "#dbc8cf" }}
                     >
-                      {k}
-                    </span>
-                    <span
-                      className="text-xs font-bold rounded-full px-2 py-0.5"
-                      style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
-                    >
-                      {v}×
-                    </span>
+                      {entry.message}
+                    </p>
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-sm" style={{ color: "#dbc8cf" }}>
-                No patterns recorded yet.
-              </p>
             )}
           </div>
-        )}
 
-        <div
-          className="rounded-[32px] border p-6 shadow-2xl"
-          style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
-        >
-          <h3
-            className="text-xl font-extrabold font-display mb-3"
-            style={{ color: "#fff4f8" }}
+          {/* Session safety */}
+          <div
+            className="rounded-[28px] border p-5"
+            style={{ borderColor: "#35242c", backgroundColor: "#1b1317" }}
           >
-            Why this layout works
-          </h3>
-          <ul
-            className="space-y-3 text-sm leading-6"
-            style={{ color: "#d5c4cb" }}
+            <p
+              className="text-[18px] font-extrabold mb-2 font-display"
+              style={{ color: "#fff4f8" }}
+            >
+              Session safety
+            </p>
+            <p className="text-sm mb-1" style={{ color: "#dbc8cf" }}>
+              Crisis flags this session: {crisisCount}
+            </p>
+            <p className="text-sm mb-3" style={{ color: "#dbc8cf" }}>
+              Location: {locationLabel}
+            </p>
+            <button
+              type="button"
+              data-ocid="journey.location.button"
+              onClick={onShareLocation}
+              className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80 mb-2"
+              style={{
+                borderColor: "#76515e",
+                color: "#f4d6df",
+                backgroundColor: "transparent",
+              }}
+            >
+              Share live location for this session
+            </button>
+            <button
+              type="button"
+              data-ocid="journey.end_session.button"
+              onClick={onEndSession}
+              className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80 mb-2"
+              style={{
+                borderColor: "#76515e",
+                color: "#f4d6df",
+                backgroundColor: "transparent",
+              }}
+            >
+              End session and clear session-only data
+            </button>
+            <button
+              type="button"
+              data-ocid="journey.clear_data.delete_button"
+              onClick={onClearAllData}
+              className="w-full rounded-[18px] py-3 px-4 text-sm font-bold border transition-opacity hover:opacity-80"
+              style={{
+                borderColor: "#76515e",
+                color: "#f4d6df",
+                backgroundColor: "transparent",
+              }}
+            >
+              Clear all local data
+            </button>
+          </div>
+
+          <button
+            type="button"
+            data-ocid="journey.step5.primary_button"
+            onClick={() => {
+              onSetChapterIndex(0);
+              onSetSavedChapters(() => []);
+              onSetTypedResponses(() => ({}));
+              onSetStep(4);
+            }}
+            className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90"
+            style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
           >
-            <li>• Avoidant users are not hit with every tool at once.</li>
-            <li>• Deeper users still get a clear path inward.</li>
-            <li>• The experience feels like unfolding, not confronting.</li>
-            <li>• Story language makes reflection feel less clinical.</li>
-          </ul>
-        </div>
-      </aside>
+            Read it again
+            <ChevronRight className="ml-2 h-4 w-4" />
+          </button>
+        </motion.div>
+      )}
     </div>
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [hydrated, setHydrated] = useState(false);
   const [screen, setScreen] = useState<Screen>("journey");
@@ -2280,15 +3160,18 @@ export default function App() {
   }
 
   // ── Crisis detection ──────────────────────────────────────────────────────────
-  function handleCrisisDetected(text: string) {
+  const handleCrisisDetected = useCallback((text: string) => {
     if (!hasCrisisLanguage(text)) return;
     const severity = getCrisisSeverity(text);
     setCrisisSeverity(severity);
     setCrisisActive(true);
     setCrisisCount((prev) => prev + 1);
     setShowCrisisModal(true);
-    refreshSessionTimer();
-  }
+    // Use functional updates to avoid stale closure; call refreshSessionTimer indirectly
+    const nextExpiry = Date.now() + SESSION_TIMEOUT_MS;
+    setSessionExpiresAt(nextExpiry);
+    setSessionCountdown(SESSION_TIMEOUT_MS);
+  }, []);
 
   // ── Feedback ──────────────────────────────────────────────────────────────────
   function submitFeedback() {
@@ -2485,16 +3368,67 @@ export default function App() {
   }
 
   // ── Main app ──────────────────────────────────────────────────────────────────
-  const navItems: { label: string; target: Screen }[] = [
-    { label: "Journey", target: "journey" },
-    { label: "Breathe", target: "breathe" },
-    { label: "Support", target: "support" },
-    { label: "Our Story", target: "creator" },
+
+  // ── Step pill label ───────────────────────────────────────────────────────────
+  function getStepLabel(): string {
+    if (screen === "breathe") return "Breathe";
+    if (screen === "support") return "Support";
+    if (screen === "creator") return "Our Story";
+    if (screen === "feedback") return "Feedback";
+    if (screen === "garden") return "Garden";
+    const labels = [
+      "Welcome",
+      "Entry Point",
+      "Expression",
+      `Ch ${journeyStep > 3 ? chapterIndex + 1 : 1}/3`,
+      "Recap",
+    ];
+    return labels[journeyStep - 1] || "Mirror";
+  }
+
+  const shellNavItems: {
+    icon: React.ReactNode;
+    label: string;
+    target: Screen;
+  }[] = [
+    {
+      icon: <BookOpen className="h-3.5 w-3.5" />,
+      label: "Journey",
+      target: "journey",
+    },
+    {
+      icon: <Wind className="h-3.5 w-3.5" />,
+      label: "Breathe",
+      target: "breathe",
+    },
+    {
+      icon: <Sprout className="h-3.5 w-3.5" />,
+      label: "Garden",
+      target: "garden",
+    },
+    {
+      icon: <Feather className="h-3.5 w-3.5" />,
+      label: "Story",
+      target: "creator",
+    },
   ];
 
+  const pageKey =
+    screen === "journey" ? `journey-${journeyStep}-${chapterIndex}` : screen;
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#120d10" }}>
-      {/* Modals */}
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        background:
+          "linear-gradient(180deg, #0f0b14 0%, #17111f 45%, #21152a 100%)",
+      }}
+    >
+      {/* Global modals */}
       <AnimatePresence>
         {showCrisisModal && (
           <CrisisModal
@@ -2515,85 +3449,125 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Crisis banner */}
-      {crisisActive && (
+      {/* Shell card */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "520px",
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: "28px",
+          backdropFilter: "blur(14px)",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+          overflow: "hidden",
+        }}
+      >
+        {/* Topbar */}
         <div
-          className="sticky top-0 z-30 px-5 py-3 flex items-center justify-between gap-4"
           style={{
-            backgroundColor: "#3a1f28",
-            borderBottom: "1px solid #7a3b4c",
+            padding: "18px 20px 0",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
           }}
         >
-          <p className="text-sm font-bold" style={{ color: "#ffd9e2" }}>
-            {crisisContent.title}
-          </p>
-          <button
-            type="button"
-            data-ocid="crisis.banner.button"
-            onClick={() => setScreen("support")}
-            className="rounded-full px-4 py-2 text-xs font-extrabold transition-opacity hover:opacity-90 whitespace-nowrap"
-            style={{ backgroundColor: "#ff6b8a", color: "#fff" }}
+          <div
+            style={{
+              fontSize: "12px",
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+              opacity: 0.8,
+              color: "#fff4f8",
+              fontWeight: 700,
+            }}
           >
-            Get support
-          </button>
-        </div>
-      )}
-
-      {/* Main layout */}
-      <div className="mx-auto w-full max-w-6xl p-4 md:p-8">
-        {/* Header */}
-        <header
-          className="rounded-[30px] border p-6 shadow-2xl mb-6"
-          style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
-        >
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex-1">
-              <p
-                className="text-xs font-bold uppercase tracking-[0.25em]"
-                style={{ color: "#d9a6b7" }}
-              >
-                Mirror Within{userName ? ` · ${userName}` : ""}
-              </p>
-              <h1
-                className="mt-2 text-3xl font-extrabold leading-tight font-display md:text-4xl"
-                style={{ color: "#fff4f8" }}
-              >
-                A slower entrance, like opening a book instead of opening a
-                wound.
-              </h1>
-            </div>
-            <div className="flex flex-col items-start md:items-end gap-2 shrink-0">
-              <ProgressRings step={screen === "journey" ? journeyStep : 0} />
-              <div className="flex items-center gap-3">
-                <span
-                  className="text-[11px] font-semibold"
-                  style={{ color: "#a07080" }}
-                >
-                  {formatTimeRemaining(sessionCountdown)}
-                </span>
-                <button
-                  type="button"
-                  data-ocid="nav.logout.button"
-                  onClick={() => lockApp()}
-                  className="text-[11px] font-bold rounded-full px-3 py-1 border transition-opacity hover:opacity-80"
-                  style={{
-                    borderColor: "#76515e",
-                    color: "#f4d6df",
-                    backgroundColor: "transparent",
-                  }}
-                >
-                  Log out
-                </button>
-              </div>
-            </div>
+            Mirror
           </div>
-
-          {/* Nav */}
-          <nav className="flex flex-wrap gap-2 mt-5" data-ocid="nav.panel">
-            {navItems.map(({ label, target }) => (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {/* Session timer */}
+            {isUnlocked && (
+              <span
+                style={{ fontSize: "11px", color: "#a07080", fontWeight: 600 }}
+              >
+                {formatTimeRemaining(sessionCountdown)}
+              </span>
+            )}
+            {/* Step pill */}
+            <div
+              style={{
+                fontSize: "12px",
+                padding: "8px 12px",
+                borderRadius: "999px",
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                color: "#f6eef8",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {isUnlocked ? getStepLabel() : "Welcome"}
+            </div>
+            {/* Feedback icon */}
+            {isUnlocked && (
               <button
                 type="button"
+                data-ocid="topbar.feedback.open_modal_button"
+                onClick={() =>
+                  setScreen(screen === "feedback" ? "journey" : "feedback")
+                }
+                style={{
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: "999px",
+                  padding: "8px",
+                  color:
+                    screen === "feedback" ? "#efc1d0" : "rgba(246,238,248,0.7)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {/* Log out */}
+            {isUnlocked && (
+              <button
+                type="button"
+                data-ocid="nav.logout.button"
+                onClick={lockApp}
+                style={{
+                  background: "transparent",
+                  border: "1px solid #76515e",
+                  borderRadius: "999px",
+                  padding: "6px 10px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  color: "#f4d6df",
+                  cursor: "pointer",
+                }}
+              >
+                Lock
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Mini nav strip (only when unlocked) */}
+        {isUnlocked && (
+          <div
+            style={{
+              display: "flex",
+              gap: "6px",
+              padding: "12px 20px 0",
+              flexWrap: "wrap",
+            }}
+            data-ocid="nav.panel"
+          >
+            {shellNavItems.map(({ icon, label, target }) => (
+              <button
                 key={target}
+                type="button"
                 data-ocid={`nav.${target}.link`}
                 onClick={() => {
                   refreshSessionTimer();
@@ -2604,115 +3578,293 @@ export default function App() {
                   }
                   setScreen(target);
                 }}
-                className="rounded-full px-[13px] py-[9px] text-[13px] font-semibold border transition-all"
                 style={{
-                  backgroundColor: screen === target ? "#38262e" : "#2a1e24",
-                  borderColor: "#4a323c",
-                  color: "#f1d8df",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "6px 12px",
+                  borderRadius: "999px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  background:
+                    screen === target
+                      ? "rgba(239,193,208,0.15)"
+                      : "rgba(255,255,255,0.05)",
+                  border:
+                    screen === target
+                      ? "1px solid rgba(239,193,208,0.35)"
+                      : "1px solid rgba(255,255,255,0.08)",
+                  color:
+                    screen === target ? "#efc1d0" : "rgba(246,238,248,0.65)",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
                 }}
               >
+                {icon}
                 {label}
               </button>
             ))}
-          </nav>
-        </header>
+            {/* Crisis alert if active */}
+            {crisisActive && (
+              <button
+                type="button"
+                data-ocid="nav.support.link"
+                onClick={() => setScreen("support")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "6px 12px",
+                  borderRadius: "999px",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  background: "rgba(255,107,138,0.15)",
+                  border: "1px solid rgba(255,107,138,0.4)",
+                  color: "#ff6b8a",
+                  cursor: "pointer",
+                }}
+              >
+                Get support
+              </button>
+            )}
+          </div>
+        )}
 
-        {/* Screen content */}
-        <main>
+        {/* Page container */}
+        <div style={{ position: "relative", padding: "18px" }}>
           <AnimatePresence mode="wait">
-            {screen === "journey" && (
-              <motion.div
-                key="journey"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <BookJourney
-                  step={journeyStep}
-                  sharedName={sharedName}
-                  selectedPath={selectedPath}
-                  selectedMode={selectedMode}
-                  chapterIndex={chapterIndex}
-                  typedResponses={typedResponses}
-                  savedChapters={savedChapters}
-                  profile={profile}
-                  onSetStep={setJourneyStep}
-                  onSetSharedName={setSharedName}
-                  onSetSelectedPath={setSelectedPath}
-                  onSetSelectedMode={setSelectedMode}
-                  onSetChapterIndex={setChapterIndex}
-                  onSetTypedResponses={setTypedResponses}
-                  onSetSavedChapters={setSavedChapters}
-                  onSetProfile={setProfile}
-                  onCrisisDetected={handleCrisisDetected}
-                  feedbackEntries={feedbackEntries}
-                  feedbackText={feedbackText}
-                  onFeedbackChange={setFeedbackText}
-                  onSubmitFeedback={submitFeedback}
-                  onClearAllData={clearAllLocalData}
-                  crisisCount={crisisCount}
-                  locationLabel={locationLabel}
-                  onShareLocation={requestLocation}
-                  onEndSession={clearSession}
-                />
-              </motion.div>
-            )}
+            <motion.div
+              key={pageKey}
+              initial={{ opacity: 0, rotateY: -18, x: 28, scale: 0.98 }}
+              animate={{ opacity: 1, rotateY: 0, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -20, scale: 0.97 }}
+              transition={{ duration: 0.45, ease: "easeOut" }}
+              style={{
+                perspective: "1200px",
+                transformStyle: "preserve-3d",
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03))",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: "24px",
+                padding: "24px",
+                minHeight: "480px",
+              }}
+            >
+              {/* Lock / Welcome / Loading screens */}
+              {!hydrated && (
+                <div className="flex flex-col gap-4 py-8">
+                  <p
+                    className="text-xs font-bold tracking-widest uppercase"
+                    style={{ color: "#d9a6b7" }}
+                  >
+                    Mirror Within
+                  </p>
+                  <h1
+                    className="text-2xl font-extrabold"
+                    style={{ color: "#fff7fa" }}
+                  >
+                    Loading
+                  </h1>
+                  <p
+                    className="text-sm"
+                    style={{ color: "#d6c5cb", lineHeight: "1.6" }}
+                  >
+                    Restoring your session...
+                  </p>
+                </div>
+              )}
 
-            {screen === "breathe" && (
-              <motion.div
-                key="breathe"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <BreatheScreen onStop={() => setScreen(breatheReturnScreen)} />
-              </motion.div>
-            )}
+              {hydrated && !isUnlocked && !showWelcome && (
+                <div
+                  className="flex flex-col gap-5 py-4"
+                  data-ocid="access.page"
+                >
+                  <div>
+                    <p
+                      className="text-xs font-bold tracking-[0.2em] uppercase mb-3"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      Mirror Within
+                    </p>
+                    <h1
+                      className="text-2xl font-extrabold mb-2"
+                      style={{ color: "#fff7fa" }}
+                    >
+                      Private Access
+                    </h1>
+                    <p
+                      className="text-sm"
+                      style={{ color: "#d6c5cb", lineHeight: "1.6" }}
+                    >
+                      Enter your access code to continue.
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    value={accessInput}
+                    onChange={(e) => setAccessInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const name = allowedCodes[accessInput.trim()];
+                        if (name) {
+                          setUserName(name);
+                          setShowWelcome(true);
+                        } else alert("Invalid code. Please try again.");
+                      }
+                    }}
+                    placeholder="Enter code"
+                    className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
+                    style={{
+                      backgroundColor: "#2b2025",
+                      border: "1px solid #4a323c",
+                      color: "#fff",
+                    }}
+                    data-ocid="access.input"
+                  />
+                  <button
+                    type="button"
+                    data-ocid="access.submit_button"
+                    onClick={() => {
+                      const name = allowedCodes[accessInput.trim()];
+                      if (name) {
+                        setUserName(name);
+                        setShowWelcome(true);
+                      } else alert("Invalid code. Please try again.");
+                    }}
+                    className="w-full rounded-2xl py-4 text-sm font-extrabold transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+                  >
+                    Unlock
+                  </button>
+                </div>
+              )}
 
-            {screen === "support" && (
-              <motion.div
-                key="support"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <SupportScreen
-                  crisisContent={crisisContent}
-                  crisisCount={crisisCount}
-                  locationLabel={locationLabel}
-                  onRequestLocation={requestLocation}
-                  onContinue={() => {
-                    setCrisisActive(false);
-                    refreshSessionTimer();
-                    setScreen("journey");
-                  }}
-                />
-              </motion.div>
-            )}
+              {hydrated && showWelcome && (
+                <div className="flex flex-col items-center gap-5 py-8 text-center">
+                  <p
+                    className="text-xs font-bold tracking-[0.2em] uppercase"
+                    style={{ color: "#d9a6b7" }}
+                  >
+                    Mirror Within
+                  </p>
+                  <h1
+                    className="text-3xl font-extrabold"
+                    style={{ color: "#fff7fa" }}
+                  >
+                    Welcome back, {userName}.
+                  </h1>
+                  <p
+                    className="text-sm max-w-xs"
+                    style={{ color: "#d6c5cb", lineHeight: "1.7" }}
+                  >
+                    This is a safe space for honest self-reflection. Take your
+                    time.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUnlocked(true);
+                      setShowWelcome(false);
+                      refreshSessionTimer(userName);
+                    }}
+                    className="w-full rounded-2xl py-4 text-sm font-extrabold transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+                  >
+                    Begin
+                  </button>
+                </div>
+              )}
 
-            {screen === "creator" && (
-              <motion.div
-                key="creator"
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <CreatorScreen />
-              </motion.div>
-            )}
+              {/* Main screens (when unlocked) */}
+              {hydrated && isUnlocked && !showWelcome && (
+                <>
+                  {screen === "journey" && (
+                    <BookJourney
+                      step={journeyStep}
+                      sharedName={sharedName}
+                      selectedPath={selectedPath}
+                      selectedMode={selectedMode}
+                      chapterIndex={chapterIndex}
+                      typedResponses={typedResponses}
+                      savedChapters={savedChapters}
+                      profile={profile}
+                      onSetStep={setJourneyStep}
+                      onSetSharedName={setSharedName}
+                      onSetSelectedPath={setSelectedPath}
+                      onSetSelectedMode={setSelectedMode}
+                      onSetChapterIndex={setChapterIndex}
+                      onSetTypedResponses={setTypedResponses}
+                      onSetSavedChapters={setSavedChapters}
+                      onSetProfile={setProfile}
+                      onCrisisDetected={handleCrisisDetected}
+                      feedbackEntries={feedbackEntries}
+                      feedbackText={feedbackText}
+                      onFeedbackChange={setFeedbackText}
+                      onSubmitFeedback={submitFeedback}
+                      onClearAllData={clearAllLocalData}
+                      crisisCount={crisisCount}
+                      locationLabel={locationLabel}
+                      onShareLocation={requestLocation}
+                      onEndSession={clearSession}
+                    />
+                  )}
+
+                  {screen === "breathe" && (
+                    <BreatheScreen
+                      onStop={() => setScreen(breatheReturnScreen)}
+                    />
+                  )}
+
+                  {screen === "support" && (
+                    <SupportScreen
+                      crisisContent={crisisContent}
+                      crisisCount={crisisCount}
+                      locationLabel={locationLabel}
+                      onRequestLocation={requestLocation}
+                      onContinue={() => {
+                        setCrisisActive(false);
+                        refreshSessionTimer();
+                        setScreen("journey");
+                      }}
+                    />
+                  )}
+
+                  {screen === "creator" && <CreatorScreen />}
+
+                  {screen === "feedback" && (
+                    <FeedbackViewer onBack={() => setScreen("journey")} />
+                  )}
+
+                  {screen === "garden" && (
+                    <GardenPanel
+                      journeyStep={journeyStep}
+                      savedChapters={savedChapters}
+                      selectedPath={selectedPath}
+                      profile={profile}
+                    />
+                  )}
+                </>
+              )}
+            </motion.div>
           </AnimatePresence>
-        </main>
+        </div>
 
         {/* Footer */}
-        <footer className="mt-12 text-center">
-          <p className="text-xs" style={{ color: "#6b5560" }}>
-            © {new Date().getFullYear()}. Built with ♥ using{" "}
-            <a
-              href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "#9e7a88" }}
-            >
-              caffeine.ai
-            </a>
-          </p>
-        </footer>
+        {isUnlocked && (
+          <div style={{ padding: "16px 24px 20px", textAlign: "center" }}>
+            <p style={{ fontSize: "11px", color: "#6b5560" }}>
+              © {new Date().getFullYear()}. Built with ♥ using{" "}
+              <a
+                href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "#9e7a88" }}
+              >
+                caffeine.ai
+              </a>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
