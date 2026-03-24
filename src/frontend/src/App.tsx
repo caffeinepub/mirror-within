@@ -2626,10 +2626,14 @@ function BookJourney({
                 value={typedResponses[chapterIndex] ?? ""}
                 onChange={(e) => handleTypedChange(e.target.value)}
                 placeholder="Write the first honest version, not the polished one."
-                className="mt-5 min-h-[220px] w-full rounded-2xl border px-4 py-3 text-white outline-none"
+                className="mt-6 min-h-[260px] w-full rounded-2xl border px-5 py-4 text-base text-white outline-none"
                 style={{
-                  borderColor: "#4a323c",
+                  borderColor: "#7a4a5c",
                   backgroundColor: "#2b2025",
+                  boxShadow:
+                    "0 0 0 1px #5a3345, inset 0 2px 8px rgba(0,0,0,0.35)",
+                  fontSize: "16px",
+                  lineHeight: "1.65",
                 }}
               />
             </div>
@@ -2731,11 +2735,15 @@ function BookJourney({
                       value={spokenTranscript || threadInput}
                       onChange={(e) => setThreadInput(e.target.value)}
                       placeholder="Your reply..."
-                      rows={3}
-                      className="w-full rounded-2xl border px-4 py-3 text-white outline-none text-sm"
+                      rows={5}
+                      className="w-full rounded-2xl border px-5 py-4 text-white outline-none"
                       style={{
-                        borderColor: "#4a323c",
+                        borderColor: "#7a4a5c",
                         backgroundColor: "#2b2025",
+                        boxShadow:
+                          "0 0 0 1px #5a3345, inset 0 2px 8px rgba(0,0,0,0.35)",
+                        fontSize: "16px",
+                        lineHeight: "1.65",
                       }}
                     />
                   </div>
@@ -2754,11 +2762,15 @@ function BookJourney({
                       }
                     }}
                     placeholder="Reply here... (Enter to send)"
-                    rows={3}
-                    className="flex-1 rounded-2xl border px-4 py-3 text-white outline-none text-sm"
+                    rows={5}
+                    className="flex-1 rounded-2xl border px-5 py-4 text-white outline-none"
                     style={{
-                      borderColor: "#4a323c",
+                      borderColor: "#7a4a5c",
                       backgroundColor: "#2b2025",
+                      boxShadow:
+                        "0 0 0 1px #5a3345, inset 0 2px 8px rgba(0,0,0,0.35)",
+                      fontSize: "16px",
+                      lineHeight: "1.65",
                     }}
                   />
                 )}
