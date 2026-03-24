@@ -1979,6 +1979,40 @@ function BookJourney({
     useState<DetailedAnalysis | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
+  const placeholderSeed = useMemo(() => Math.floor(Math.random() * 8), []);
+
+  const chapterPlaceholders = [
+    "start wherever it's been sitting… no need to shape it yet.",
+    "what keeps coming back to you about this…",
+    "say the part you almost didn't say…",
+    "begin with the feeling, not the story…",
+    "even if it sounds small, put it here…",
+    "what's been living in the back of your mind…",
+    "let it out rough — you can always refine later…",
+    "write like nobody's reading…",
+  ];
+
+  const threadVoicePlaceholders = [
+    "what's been coming up for you…",
+    "keep going, there's more here…",
+    "say the part that surprised you…",
+    "what does that feel like in your body…",
+    "what else wants to be said…",
+    "speak the next honest thing…",
+    "sit with it for a second, then speak…",
+    "let it be messy — that's fine…",
+  ];
+
+  const threadTextPlaceholders = [
+    "say the next honest thing… (Enter to send)",
+    "what else is true right now… (Enter to send)",
+    "keep going, you're in it… (Enter to send)",
+    "write what came up just now… (Enter to send)",
+    "the next sentence doesn't have to be perfect… (Enter to send)",
+    "follow the thread… (Enter to send)",
+    "say the part that's harder to admit… (Enter to send)",
+    "let the thought land here… (Enter to send)",
+  ];
   const activePath = useMemo(
     () => entryPaths.find((item) => item.id === selectedPath) || null,
     [selectedPath],
@@ -2625,7 +2659,11 @@ function BookJourney({
                 data-ocid="journey.chapter.textarea"
                 value={typedResponses[chapterIndex] ?? ""}
                 onChange={(e) => handleTypedChange(e.target.value)}
-                placeholder="Write the first honest version, not the polished one."
+                placeholder={
+                  chapterPlaceholders[
+                    placeholderSeed % chapterPlaceholders.length
+                  ]
+                }
                 className="mt-6 min-h-[260px] w-full rounded-2xl border px-5 py-4 text-base text-white outline-none"
                 style={{
                   borderColor: "#7a4a5c",
@@ -2734,7 +2772,11 @@ function BookJourney({
                       data-ocid="journey.thread.textarea"
                       value={spokenTranscript || threadInput}
                       onChange={(e) => setThreadInput(e.target.value)}
-                      placeholder="Your reply..."
+                      placeholder={
+                        threadVoicePlaceholders[
+                          placeholderSeed % threadVoicePlaceholders.length
+                        ]
+                      }
                       rows={5}
                       className="w-full rounded-2xl border px-5 py-4 text-white outline-none"
                       style={{
@@ -2761,7 +2803,11 @@ function BookJourney({
                         submitThreadReply();
                       }
                     }}
-                    placeholder="Reply here... (Enter to send)"
+                    placeholder={
+                      threadTextPlaceholders[
+                        placeholderSeed % threadTextPlaceholders.length
+                      ]
+                    }
                     rows={5}
                     className="flex-1 rounded-2xl border px-5 py-4 text-white outline-none"
                     style={{
