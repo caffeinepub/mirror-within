@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildAIProxyPayload, sendToAIProxy } from "./aiProxy";
 import {
   type MirrorAnalysis,
   analyzeEntry,
@@ -67,7 +68,7 @@ const SESSION_KEY = "mirror_within_session_v4";
 const FEEDBACK_KEY = "mirror_within_feedback_v4";
 const PROFILE_KEY = "mw_profile_v1";
 const ENTRIES_KEY = "mirrorEntries";
-const SESSION_TIMEOUT_MS = 1000 * 60 * 15;
+const SESSION_TIMEOUT_MS = 1000 * 60 * 30;
 
 const allowedCodes: Record<string, string> = {
   Ree17: "kareesha",
@@ -1240,6 +1241,7 @@ function SupportScreen({
 
 // ─── GardenPanel ──────────────────────────────────────────────────────────────
 const GARDEN_KEY = "mw_garden_v1";
+const PLANT_UNLOCK_DATES_KEY = "mw_plant_unlock_dates_v1";
 
 interface GardenProps {
   journeyStep: number;
@@ -1249,38 +1251,218 @@ interface GardenProps {
 }
 
 const gardenPlants = [
-  { id: "sprout", name: "Sprout of Beginning", symbol: "🌱" },
-  { id: "moonflower", name: "Moonflower of Self-Awareness", symbol: "🌙" },
-  { id: "lavender", name: "Lavender of Gentleness", symbol: "💜" },
-  { id: "chrysanthemum", name: "Chrysanthemum of Courage", symbol: "🌸" },
-  { id: "lotus", name: "Lotus of Neutral Attachment", symbol: "🪷" },
-  { id: "forgetmenot", name: "Forget-me-not of Letting Go", symbol: "💙" },
-  { id: "rose", name: "Rose of Self-Esteem", symbol: "🌹" },
-  { id: "jasmine", name: "Jasmine of Confidence", symbol: "🤍" },
-  { id: "sunflower", name: "Sunflower of Self-Love", symbol: "🌻" },
-  { id: "willow", name: "Willow of Resilience", symbol: "🌿" },
+  {
+    id: "sprout",
+    name: "Sprout of Beginning",
+    color: "#7a9e7e",
+    budColor: "#a8c5aa",
+  },
+  {
+    id: "moonflower",
+    name: "Moonflower of Self-Awareness",
+    color: "#d8eeff",
+    budColor: "#aad4f5",
+  },
+  {
+    id: "lavender",
+    name: "Lavender of Gentleness",
+    color: "#9b8fc4",
+    budColor: "#b8aedc",
+  },
+  {
+    id: "chrysanthemum",
+    name: "Chrysanthemum of Courage",
+    color: "#e88fa0",
+    budColor: "#f5b8c4",
+  },
+  {
+    id: "lotus",
+    name: "Lotus of Neutral Attachment",
+    color: "#f4a8c0",
+    budColor: "#f9d0df",
+  },
+  {
+    id: "forgetmenot",
+    name: "Forget-me-not of Letting Go",
+    color: "#7ab0e8",
+    budColor: "#aaccf5",
+  },
+  {
+    id: "rose",
+    name: "Rose of Self-Esteem",
+    color: "#c45c6a",
+    budColor: "#e08a96",
+  },
+  {
+    id: "jasmine",
+    name: "Jasmine of Confidence",
+    color: "#f4f0e8",
+    budColor: "#fffdf5",
+  },
+  {
+    id: "sunflower",
+    name: "Sunflower of Self-Love",
+    color: "#e8c87a",
+    budColor: "#f5dfa0",
+  },
+  {
+    id: "willow",
+    name: "Willow of Resilience",
+    color: "#7ab87a",
+    budColor: "#a8c8a8",
+  },
 ];
 
-function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
-  const opacity = unlocked ? 1 : 0.15;
-  const plants: Record<string, React.ReactNode> = {
+const GARDEN_STYLES = `
+@keyframes growUp {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes sway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+@keyframes seedPulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.15); }
+}
+.plant-grow {
+  transform-origin: bottom center;
+  animation: growUp 1.2s ease-out both;
+}
+.plant-sway {
+  transform-origin: bottom center;
+  animation: sway 3s ease-in-out infinite;
+}
+.seed-pulse {
+  animation: seedPulse 2.5s ease-in-out infinite;
+}
+`;
+
+function PlantStageSVG({
+  id,
+  stage,
+  color,
+  budColor,
+}: { id: string; stage: number; color: string; budColor: string }) {
+  // Stage 0: locked seed dot
+  if (stage === 0) {
+    return (
+      <svg viewBox="0 0 40 60" width="36" height="54" aria-hidden="true">
+        <ellipse cx="20" cy="54" rx="6" ry="2.5" fill="#3b2410" opacity="0.6" />
+        <ellipse
+          cx="20"
+          cy="50"
+          rx="4"
+          ry="5"
+          fill="#4a3020"
+          className="seed-pulse"
+        />
+      </svg>
+    );
+  }
+
+  // Stage 1: tiny sprout
+  if (stage === 1) {
+    return (
+      <svg viewBox="0 0 40 60" width="36" height="54" aria-hidden="true">
+        <g className="plant-grow">
+          <line
+            x1="20"
+            y1="58"
+            x2="20"
+            y2="42"
+            stroke="#4d7c52"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <ellipse
+            cx="14"
+            cy="40"
+            rx="5"
+            ry="3"
+            fill={color}
+            transform="rotate(-30 14 40)"
+          />
+        </g>
+      </svg>
+    );
+  }
+
+  // Stage 2: taller stem, 2 leaves, bud — plant-specific bud colors
+  if (stage === 2) {
+    return (
+      <svg viewBox="0 0 40 60" width="36" height="54" aria-hidden="true">
+        <g className="plant-grow">
+          <line
+            x1="20"
+            y1="58"
+            x2="20"
+            y2="30"
+            stroke="#4d7c52"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <ellipse
+            cx="13"
+            cy="48"
+            rx="6"
+            ry="3"
+            fill={color}
+            transform="rotate(-35 13 48)"
+          />
+          <ellipse
+            cx="27"
+            cy="40"
+            rx="6"
+            ry="3"
+            fill={color}
+            transform="rotate(35 27 40)"
+          />
+          {/* bud */}
+          <ellipse cx="20" cy="26" rx="4" ry="5" fill={budColor} />
+          <line
+            x1="20"
+            y1="21"
+            x2="20"
+            y2="23"
+            stroke="#4d7c52"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </g>
+      </svg>
+    );
+  }
+
+  // Stage 3: full bloom per plant identity
+  const blooms: Record<string, React.ReactNode> = {
     sprout: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Sprout of Beginning"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="50"
+          y1="58"
           x2="20"
-          y2="28"
+          y2="30"
           stroke="#4d7c52"
           strokeWidth="2.5"
           strokeLinecap="round"
+        />
+        <ellipse
+          cx="13"
+          cy="46"
+          rx="6"
+          ry="3"
+          fill="#a8c5aa"
+          transform="rotate(-30 13 46)"
+        />
+        <ellipse
+          cx="27"
+          cy="40"
+          rx="6"
+          ry="3"
+          fill="#a8c5aa"
+          transform="rotate(30 27 40)"
         />
         <ellipse cx="20" cy="22" rx="8" ry="10" fill="#7a9e7e" />
         <ellipse
@@ -1291,53 +1473,55 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
           fill="#a8c5aa"
           transform="rotate(-30 12 30)"
         />
-      </svg>
+      </g>
     ),
     moonflower: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Moonflower of Self-Awareness"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="50"
+          y1="58"
           x2="20"
-          y2="28"
+          y2="30"
           stroke="#4d7c52"
           strokeWidth="2"
           strokeLinecap="round"
         />
-        <circle cx="20" cy="20" r="10" fill="#d8eeff" />
-        <circle cx="16" cy="16" r="6" fill="#1b1317" />
+        <ellipse
+          cx="13"
+          cy="46"
+          rx="5"
+          ry="3"
+          fill="#7a9e7e"
+          transform="rotate(-30 13 46)"
+        />
+        <ellipse
+          cx="27"
+          cy="40"
+          rx="5"
+          ry="3"
+          fill="#7a9e7e"
+          transform="rotate(30 27 40)"
+        />
         {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
           <ellipse
             key={a}
             cx={20}
-            cy={9}
+            cy={11}
             rx="2.5"
             ry="4"
             fill="#d8eeff"
-            transform={`rotate(${a} 20 20)`}
+            transform={`rotate(${a} 20 22)`}
           />
         ))}
-      </svg>
+        <circle cx="20" cy="22" r="9" fill="#d8eeff" />
+        <circle cx="16" cy="18" r="5" fill="#1b1317" />
+      </g>
     ),
     lavender: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Lavender of Gentleness"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="52"
+          y1="58"
           x2="20"
           y2="30"
           stroke="#4d7c52"
@@ -1346,163 +1530,97 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
         />
         <line
           x1="20"
-          y1="44"
-          x2="14"
-          y2="38"
+          y1="46"
+          x2="13"
+          y2="40"
           stroke="#7a9e7e"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
         <line
           x1="20"
-          y1="44"
-          x2="26"
-          y2="38"
+          y1="46"
+          x2="27"
+          y2="40"
           stroke="#7a9e7e"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
-        {[0, 4, 8, 12, 16].map((i) => (
+        {[0, 4, 8, 12, 16, 20].map((i) => (
           <ellipse
             key={i}
             cx="20"
-            cy={30 - i * 2}
+            cy={30 - i * 1.8}
             rx="3"
             ry="2"
             fill="#9b8fc4"
           />
         ))}
-      </svg>
+      </g>
     ),
     chrysanthemum: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Chrysanthemum of Courage"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="52"
+          y1="58"
           x2="20"
-          y2="30"
+          y2="32"
           stroke="#4d7c52"
-          strokeWidth="2"
+          strokeWidth="2.5"
           strokeLinecap="round"
+        />
+        <ellipse
+          cx="13"
+          cy="46"
+          rx="5"
+          ry="3"
+          fill="#a8c5aa"
+          transform="rotate(-30 13 46)"
         />
         {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a) => (
           <ellipse
             key={a}
             cx="20"
-            cy="15"
-            rx="3"
-            ry="7"
-            fill="#efc1d0"
+            cy="14"
+            rx="2"
+            ry="6"
+            fill="#e88fa0"
             transform={`rotate(${a} 20 22)`}
           />
         ))}
-        <circle cx="20" cy="22" r="5" fill="#f6dae3" />
-      </svg>
+        <circle cx="20" cy="22" r="5" fill="#f5c8d0" />
+      </g>
     ),
     lotus: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Lotus of Neutral Attachment"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="52"
+          y1="58"
           x2="20"
           y2="36"
           stroke="#4d7c52"
           strokeWidth="2"
           strokeLinecap="round"
         />
-        <ellipse cx="20" cy="30" rx="5" ry="10" fill="#c49bd8" />
-        <ellipse
-          cx="12"
-          cy="34"
-          rx="4"
-          ry="8"
-          fill="#c49bd8"
-          transform="rotate(-25 12 34)"
-        />
-        <ellipse
-          cx="28"
-          cy="34"
-          rx="4"
-          ry="8"
-          fill="#c49bd8"
-          transform="rotate(25 28 34)"
-        />
-        <ellipse
-          cx="7"
-          cy="38"
-          rx="3.5"
-          ry="7"
-          fill="#d8c0e8"
-          transform="rotate(-45 7 38)"
-        />
-        <ellipse
-          cx="33"
-          cy="38"
-          rx="3.5"
-          ry="7"
-          fill="#d8c0e8"
-          transform="rotate(45 33 38)"
-        />
-      </svg>
-    ),
-    forgetmenot: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Forget-me-not of Letting Go"
-        style={{ opacity }}
-      >
-        <line
-          x1="20"
-          y1="52"
-          x2="20"
-          y2="28"
-          stroke="#4d7c52"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-        {[0, 72, 144, 216, 288].map((a) => (
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
           <ellipse
             key={a}
             cx="20"
             cy="14"
-            rx="4"
-            ry="7"
-            fill="#7b9ed9"
-            transform={`rotate(${a} 20 22)`}
+            rx="3"
+            ry="8"
+            fill="#f4a8c0"
+            transform={`rotate(${a} 20 24)`}
           />
         ))}
-        <circle cx="20" cy="22" r="3.5" fill="#f4f0e8" />
-      </svg>
+        <circle cx="20" cy="24" r="5" fill="#f9d0df" />
+      </g>
     ),
-    rose: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Rose of Self-Esteem"
-        style={{ opacity }}
-      >
+    forgetmenot: (
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="52"
+          y1="58"
           x2="20"
           y2="32"
           stroke="#4d7c52"
@@ -1511,58 +1629,117 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
         />
         <line
           x1="20"
-          y1="42"
-          x2="14"
-          y2="36"
+          y1="46"
+          x2="13"
+          y2="40"
           stroke="#7a9e7e"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
+        <line
+          x1="20"
+          y1="46"
+          x2="27"
+          y2="40"
+          stroke="#7a9e7e"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        {[0, 72, 144, 216, 288].map((a) => (
+          <ellipse
+            key={a}
+            cx="20"
+            cy="14"
+            rx="3"
+            ry="6"
+            fill="#7ab0e8"
+            transform={`rotate(${a} 20 22)`}
+          />
+        ))}
+        <circle cx="20" cy="22" r="3.5" fill="#fff9e0" />
+        {[0, 72, 144, 216, 288].map((a) => (
+          <ellipse
+            key={`b${a}`}
+            cx="13"
+            cy="32"
+            rx="2"
+            ry="4"
+            fill="#7ab0e8"
+            transform={`rotate(${a} 13 38)`}
+          />
+        ))}
+        <circle cx="13" cy="38" r="2.5" fill="#fff9e0" />
+        {[0, 72, 144, 216, 288].map((a) => (
+          <ellipse
+            key={`c${a}`}
+            cx="27"
+            cy="32"
+            rx="2"
+            ry="4"
+            fill="#7ab0e8"
+            transform={`rotate(${a} 27 38)`}
+          />
+        ))}
+        <circle cx="27" cy="38" r="2.5" fill="#fff9e0" />
+      </g>
+    ),
+    rose: (
+      <g className="plant-sway">
+        <line
+          x1="20"
+          y1="58"
+          x2="20"
+          y2="34"
+          stroke="#4d7c52"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
         <ellipse
-          cx="12"
-          cy="35"
-          rx="4"
+          cx="13"
+          cy="48"
+          rx="5"
           ry="2.5"
           fill="#a8c5aa"
-          transform="rotate(-20 12 35)"
+          transform="rotate(-20 13 48)"
+        />
+        <ellipse
+          cx="27"
+          cy="42"
+          rx="5"
+          ry="2.5"
+          fill="#a8c5aa"
+          transform="rotate(20 27 42)"
         />
         <circle cx="20" cy="22" r="10" fill="#c45c6a" />
         <ellipse cx="20" cy="18" rx="6" ry="8" fill="#d9748a" />
         <ellipse cx="20" cy="20" rx="3.5" ry="5" fill="#e89aaa" />
-      </svg>
+      </g>
     ),
     jasmine: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Jasmine of Confidence"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="52"
+          y1="58"
           x2="20"
-          y2="30"
+          y2="32"
           stroke="#4d7c52"
           strokeWidth="2"
           strokeLinecap="round"
         />
         <line
           x1="20"
-          y1="40"
+          y1="44"
           x2="13"
-          y2="33"
+          y2="37"
           stroke="#7a9e7e"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
         <line
           x1="20"
-          y1="40"
+          y1="44"
           x2="27"
-          y2="33"
+          y2="37"
           stroke="#7a9e7e"
           strokeWidth="1.5"
           strokeLinecap="round"
@@ -1587,10 +1764,10 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
             rx="2"
             ry="5"
             fill="#f4f0e8"
-            transform={`rotate(${a} 13 35)`}
+            transform={`rotate(${a} 13 37)`}
           />
         ))}
-        <circle cx="13" cy="35" r="2.5" fill="#e8c87a" />
+        <circle cx="13" cy="37" r="2.5" fill="#e8c87a" />
         {[0, 60, 120, 180, 240, 300].map((a) => (
           <ellipse
             key={`c${a}`}
@@ -1599,24 +1776,17 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
             rx="2"
             ry="5"
             fill="#f4f0e8"
-            transform={`rotate(${a} 27 35)`}
+            transform={`rotate(${a} 27 37)`}
           />
         ))}
-        <circle cx="27" cy="35" r="2.5" fill="#e8c87a" />
-      </svg>
+        <circle cx="27" cy="37" r="2.5" fill="#e8c87a" />
+      </g>
     ),
     sunflower: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Sunflower of Self-Love"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="52"
+          y1="58"
           x2="20"
           y2="28"
           stroke="#4d7c52"
@@ -1625,20 +1795,20 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
         />
         <line
           x1="20"
-          y1="44"
+          y1="46"
           x2="12"
-          y2="38"
+          y2="40"
           stroke="#7a9e7e"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
         <ellipse
           cx="10"
-          cy="37"
+          cy="39"
           rx="5"
           ry="2.5"
           fill="#a8c5aa"
-          transform="rotate(-30 10 37)"
+          transform="rotate(-30 10 39)"
         />
         {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a) => (
           <ellipse
@@ -1653,20 +1823,13 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
         ))}
         <circle cx="20" cy="22" r="7" fill="#8b5e0a" />
         <circle cx="20" cy="22" r="4" fill="#6b4408" />
-      </svg>
+      </g>
     ),
     willow: (
-      <svg
-        viewBox="0 0 40 56"
-        width="40"
-        height="56"
-        role="img"
-        aria-label="Willow of Resilience"
-        style={{ opacity }}
-      >
+      <g className="plant-sway">
         <line
           x1="20"
-          y1="52"
+          y1="58"
           x2="20"
           y2="18"
           stroke="#4d7c52"
@@ -1705,16 +1868,23 @@ function PlantSVG({ id, unlocked }: { id: string; unlocked: boolean }) {
           <path
             key={`r${x}`}
             d={`M${x} ${x < 17 ? 14 : x > 27 ? 14 : 12} Q${x + 4} ${x < 17 ? 28 : 26} ${x + 6} ${x < 17 ? 40 : 38}`}
-            stroke="#a8c5aa"
+            stroke="#a8c8a8"
             strokeWidth="1.5"
             fill="none"
             strokeLinecap="round"
           />
         ))}
-      </svg>
+      </g>
     ),
   };
-  return plants[id] ?? null;
+
+  return (
+    <svg viewBox="0 0 40 60" width="36" height="54" aria-hidden="true">
+      {blooms[id] ?? (
+        <circle cx="20" cy="30" r="6" fill={color} className="plant-sway" />
+      )}
+    </svg>
+  );
 }
 
 function checkMilestones(
@@ -1740,6 +1910,21 @@ function checkMilestones(
   return met;
 }
 
+function getPlantStage(
+  id: string,
+  unlockedIds: string[],
+  unlockDates: Record<string, number>,
+): number {
+  if (!unlockedIds.includes(id)) return 0;
+  const ts = unlockDates[id];
+  if (!ts) return 1;
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const days = Math.floor((Date.now() - ts) / msPerDay);
+  if (days <= 0) return 1;
+  if (days === 1) return 2;
+  return 3;
+}
+
 function GardenPanel({
   journeyStep,
   savedChapters,
@@ -1751,6 +1936,13 @@ function GardenPanel({
       return JSON.parse(localStorage.getItem(GARDEN_KEY) || "[]");
     } catch {
       return [];
+    }
+  });
+  const [unlockDates, setUnlockDates] = useState<Record<string, number>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(PLANT_UNLOCK_DATES_KEY) || "{}");
+    } catch {
+      return {};
     }
   });
 
@@ -1767,14 +1959,29 @@ function GardenPanel({
       const updated = [...unlockedIds, ...newOnes];
       setUnlockedIds(updated);
       localStorage.setItem(GARDEN_KEY, JSON.stringify(updated));
+      const now = Date.now();
+      const newDates = { ...unlockDates };
+      for (const id of newOnes) {
+        if (!newDates[id]) newDates[id] = now;
+      }
+      setUnlockDates(newDates);
+      localStorage.setItem(PLANT_UNLOCK_DATES_KEY, JSON.stringify(newDates));
     }
-  }, [journeyStep, savedChapters, selectedPath, profile, unlockedIds]);
+  }, [
+    journeyStep,
+    savedChapters,
+    selectedPath,
+    profile,
+    unlockedIds,
+    unlockDates,
+  ]);
 
   return (
     <div
       className="rounded-[32px] border p-6 shadow-2xl"
       style={{ backgroundColor: "#1b1317", borderColor: "#35242c" }}
     >
+      <style>{GARDEN_STYLES}</style>
       <p
         className="text-xs font-bold uppercase tracking-[0.2em] mb-1"
         style={{ color: "#d9a6b7" }}
@@ -1782,34 +1989,62 @@ function GardenPanel({
         Your garden
       </p>
       <p className="text-sm leading-6 mb-5" style={{ color: "#dbc8cf" }}>
-        Your garden grows with you.
+        Your garden grows with you — a little more each day.
       </p>
-      <div className="grid grid-cols-5 gap-3">
-        {gardenPlants.map((plant) => {
-          const isUnlocked = unlockedIds.includes(plant.id);
-          return (
-            <div key={plant.id} className="flex flex-col items-center gap-1">
-              <div className="flex items-center justify-center">
-                <PlantSVG id={plant.id} unlocked={isUnlocked} />
+      {/* Plants with soil bed */}
+      <div style={{ position: "relative" }}>
+        {/* Soil bed behind plants */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 22,
+            background: "linear-gradient(to bottom, #5c3d1e, #3b2410)",
+            borderRadius: "0 0 12px 12px",
+            zIndex: 0,
+          }}
+        />
+        <div
+          className="grid grid-cols-5 gap-3"
+          style={{ position: "relative", zIndex: 1, paddingBottom: 14 }}
+        >
+          {gardenPlants.map((plant) => {
+            const stage = getPlantStage(plant.id, unlockedIds, unlockDates);
+            const isUnlocked = unlockedIds.includes(plant.id);
+            return (
+              <div key={plant.id} className="flex flex-col items-center gap-1">
+                <div
+                  className="flex items-center justify-center"
+                  style={{ height: 58 }}
+                >
+                  <PlantStageSVG
+                    id={plant.id}
+                    stage={stage}
+                    color={plant.color}
+                    budColor={plant.budColor}
+                  />
+                </div>
+                {isUnlocked ? (
+                  <p
+                    className="text-center text-[9px] leading-tight font-semibold"
+                    style={{ color: "#d9a6b7" }}
+                  >
+                    {plant.name.split(" of ")[0]}
+                  </p>
+                ) : (
+                  <p
+                    className="text-center text-[9px] leading-tight"
+                    style={{ color: "#4a323c" }}
+                  >
+                    ?
+                  </p>
+                )}
               </div>
-              {isUnlocked ? (
-                <p
-                  className="text-center text-[9px] leading-tight font-semibold"
-                  style={{ color: "#d9a6b7" }}
-                >
-                  {plant.name.split(" of ")[0]}
-                </p>
-              ) : (
-                <p
-                  className="text-center text-[9px] leading-tight"
-                  style={{ color: "#4a323c" }}
-                >
-                  ?
-                </p>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
       {unlockedIds.length === 0 && (
         <p
@@ -2226,6 +2461,22 @@ function BookJourney({
       setMirrorAnalysis(ma);
       saveMirrorEntry(ma);
       setMirrorHistory((prev) => [...prev, ma]);
+      // AI proxy integration point — fires when proxy is enabled, no-op otherwise
+      const aiPayload = buildAIProxyPayload({
+        latestEntry: `${allResponses} ${fullResponse}`,
+        conversationThread,
+        analysis: ma,
+      });
+      sendToAIProxy(aiPayload).then((aiResponse) => {
+        if (aiResponse) {
+          // AI proxy response available — store for future use
+          // Currently a no-op; wire up to UI when proxy goes live
+          console.debug(
+            "[Mirror Within] AI proxy response received:",
+            aiResponse,
+          );
+        }
+      });
       onSetStep(5);
     }
   }
