@@ -12,6 +12,16 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type MirrorAnalysis,
+  analyzeEntry,
+  buildMirror,
+  getAdaptiveQuestions,
+  getConfidence,
+  getMirrorInsights,
+  saveMirrorEntry,
+  woundLabels,
+} from "./mirrorLogic";
 
 type Screen =
   | "journey"
@@ -1964,7 +1974,7 @@ function BookJourney({
 }) {
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
-  const [voiceError, setVoiceError] = useState("");
+  const [_voiceError, setVoiceError] = useState("");
   const [spokenTranscript, setSpokenTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
 
@@ -1974,14 +1984,24 @@ function BookJourney({
     [],
   );
   const [threadInput, setThreadInput] = useState("");
-  const [inConversation, setInConversation] = useState(false);
+  const [_inConversation, setInConversation] = useState(false);
   const [detailedAnalysis, setDetailedAnalysis] =
     useState<DetailedAnalysis | null>(null);
+  const [mirrorAnalysis, setMirrorAnalysis] = useState<MirrorAnalysis | null>(
+    null,
+  );
+  const [mirrorHistory, setMirrorHistory] = useState<MirrorAnalysis[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("mirrorEntries") || "[]");
+    } catch {
+      return [];
+    }
+  });
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const placeholderSeed = useMemo(() => Math.floor(Math.random() * 8), []);
 
-  const chapterPlaceholders = [
+  const _chapterPlaceholders = [
     "start wherever it's been sitting… no need to shape it yet.",
     "what keeps coming back to you about this…",
     "say the part you almost didn't say…",
@@ -2023,8 +2043,8 @@ function BookJourney({
     selectedMode === "voice"
       ? spokenTranscript
       : (typedResponses[chapterIndex] ?? "");
-  const canAdvance = Boolean(currentResponse.trim());
-  const allChaptersDone = activePath
+  const _canAdvance = Boolean(currentResponse.trim());
+  const _allChaptersDone = activePath
     ? chapterIndex >= activePath.questions.length - 1
     : false;
 
@@ -2086,6 +2106,16 @@ function BookJourney({
     return () => recognition.stop();
   }, [onCrisisDetected]);
 
+  // Auto-seed conversation thread on Step 4 mount
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    if (step === 4 && activeQuestion) {
+      setConversationThread([{ role: "prompt", text: activeQuestion }]);
+      setInConversation(true);
+      setThreadInput("");
+    }
+  }, [step, chapterIndex]);
+
   function startListening() {
     if (!recognitionRef.current) return;
     setVoiceError("");
@@ -2099,46 +2129,32 @@ function BookJourney({
     setListening(false);
   }
 
-  function handleTypedChange(val: string) {
-    onSetTypedResponses((prev) => ({ ...prev, [chapterIndex]: val }));
-    onCrisisDetected(val);
-  }
-
-  function startConversation() {
-    if (!activePath || !canAdvance) return;
-    const firstFollowup = generateFollowup(
-      currentResponse,
-      selectedPath ?? "",
-      0,
-    );
-    setConversationThread([
-      { role: "prompt", text: activeQuestion },
-      { role: "user", text: currentResponse },
-      { role: "prompt", text: firstFollowup },
-    ]);
-    setThreadInput("");
-    setInConversation(true);
-    if (selectedMode === "voice") {
-      stopListening();
-    }
-  }
-
-  function submitThreadReply() {
-    if (!threadInput.trim()) return;
+  function submitThreadReply(overrideText?: string) {
+    const text = overrideText || threadInput.trim();
+    if (!text) return;
     const userEntries = conversationThread.filter((e) => e.role === "user");
     const exchangeCount = userEntries.length + 1;
-    const followup = generateFollowup(
-      threadInput,
-      selectedPath ?? "",
-      exchangeCount,
-    );
+    // Use adaptive questions from mirrorLogic if we have mirror analysis, otherwise fall back
+    let followup: string;
+    if (exchangeCount >= 2 && selectedPath) {
+      const adaptiveQs = getAdaptiveQuestions(
+        selectedPath,
+        mirrorAnalysis?.primaryWound ?? null,
+        mirrorHistory.length,
+      );
+      followup =
+        adaptiveQs[(exchangeCount - 1) % adaptiveQs.length] ??
+        generateFollowup(text, selectedPath ?? "", exchangeCount);
+    } else {
+      followup = generateFollowup(text, selectedPath ?? "", exchangeCount);
+    }
     const newThread = [
       ...conversationThread,
-      { role: "user" as const, text: threadInput },
+      { role: "user" as const, text: text },
       { role: "prompt" as const, text: followup },
     ];
     setConversationThread(newThread);
-    onCrisisDetected(threadInput);
+    onCrisisDetected(text);
     setThreadInput("");
     setTimeout(() => {
       threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2200,6 +2216,16 @@ function BookJourney({
       );
       setDetailedAnalysis(da);
       saveDetailedEntry(da);
+      // Full Mirror analysis
+      const ma = analyzeEntry(
+        `${allResponses} ${fullResponse}`,
+        selectedPath ?? "",
+        selectedPath ?? "surface",
+        sharedName,
+      );
+      setMirrorAnalysis(ma);
+      saveMirrorEntry(ma);
+      setMirrorHistory((prev) => [...prev, ma]);
       onSetStep(5);
     }
   }
@@ -2531,154 +2557,29 @@ function BookJourney({
               {activePath.chapterTitle}
             </div>
           </div>
-          {selectedMode === "voice" ? (
+          <div className="flex items-center gap-2">
             <div
-              className="rounded-[28px] border p-5"
-              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold"
+              style={{
+                borderColor: "#4a323c",
+                backgroundColor: "#24181d",
+                color: "#efc1d0",
+              }}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="rounded-2xl p-3"
-                    style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
-                  >
-                    <Mic className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p
-                      className="text-xl font-extrabold"
-                      style={{ color: "#fff4f8" }}
-                    >
-                      Your very own TedTalk
-                    </p>
-                    <p
-                      className="text-sm font-semibold"
-                      style={{ color: "#efc1d0" }}
-                    >
-                      Live voice capture
-                    </p>
-                  </div>
-                </div>
-                {voiceSupported && (
-                  <button
-                    type="button"
-                    data-ocid="journey.mic.toggle"
-                    onClick={() =>
-                      listening ? stopListening() : startListening()
-                    }
-                    className="inline-flex items-center gap-2 rounded-2xl border px-4 py-3 font-bold transition"
-                    style={{
-                      borderColor: listening ? "#efc1d0" : "#4a323c",
-                      backgroundColor: listening ? "#2a1d23" : "#2b2025",
-                      color: listening ? "#efc1d0" : "#a08090",
-                      boxShadow: listening
-                        ? "0 0 0 3px rgba(239,193,208,0.25)"
-                        : "none",
-                    }}
-                  >
-                    <Mic
-                      className={
-                        listening ? "h-4 w-4 animate-pulse" : "h-4 w-4"
-                      }
-                    />
-                    {listening ? "Mic on" : "Mic off"}
-                  </button>
-                )}
-              </div>
-              {!voiceSupported && (
-                <div
-                  className="mt-4 rounded-2xl border p-4 text-sm leading-6"
-                  style={{
-                    borderColor: "#7a3b4c",
-                    backgroundColor: "#3a1f28",
-                    color: "#ffd9e2",
-                  }}
-                  data-ocid="journey.voice.error_state"
-                >
-                  Voice capture is not available in this browser. Chrome usually
-                  works best.
-                </div>
+              {selectedMode === "voice" ? (
+                <>
+                  <Mic className="h-3 w-3" /> Voice mode
+                </>
+              ) : (
+                <>
+                  <PenTool className="h-3 w-3" /> Writing mode
+                </>
               )}
-              {voiceError && (
-                <div
-                  className="mt-4 rounded-2xl border p-4 text-sm leading-6"
-                  style={{
-                    borderColor: "#7a3b4c",
-                    backgroundColor: "#3a1f28",
-                    color: "#ffd9e2",
-                  }}
-                  data-ocid="journey.voice.error_state"
-                >
-                  {voiceError}
-                </div>
-              )}
-              <div
-                className="mt-5 rounded-2xl border p-4"
-                style={{ borderColor: "#4a323c", backgroundColor: "#2b2025" }}
-              >
-                <p className="text-sm font-bold" style={{ color: "#f1d8df" }}>
-                  Transcript
-                </p>
-                <p
-                  className="mt-3 min-h-[180px] whitespace-pre-wrap text-sm leading-6"
-                  style={{ color: "#dbc8cf" }}
-                >
-                  {spokenTranscript ||
-                    "Start speaking and your words will appear here."}
-                </p>
-              </div>
             </div>
-          ) : (
-            <div
-              className="rounded-[28px] border p-5"
-              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="rounded-2xl p-3"
-                  style={{ backgroundColor: "#2b2025", color: "#efc1d0" }}
-                >
-                  <PenTool className="h-6 w-6" />
-                </div>
-                <div>
-                  <p
-                    className="text-xl font-extrabold"
-                    style={{ color: "#fff4f8" }}
-                  >
-                    Hear ye Hear ye
-                  </p>
-                  <p
-                    className="text-sm font-semibold"
-                    style={{ color: "#efc1d0" }}
-                  >
-                    Chapter response
-                  </p>
-                </div>
-              </div>
-              <textarea
-                data-ocid="journey.chapter.textarea"
-                value={typedResponses[chapterIndex] ?? ""}
-                onChange={(e) => handleTypedChange(e.target.value)}
-                placeholder={
-                  chapterPlaceholders[
-                    placeholderSeed % chapterPlaceholders.length
-                  ]
-                }
-                className="mt-6 min-h-[260px] w-full rounded-2xl border px-5 py-4 text-base text-white outline-none"
-                style={{
-                  borderColor: "#7a4a5c",
-                  backgroundColor: "#2b2025",
-                  boxShadow:
-                    "0 0 0 1px #5a3345, inset 0 2px 8px rgba(0,0,0,0.35)",
-                  fontSize: "16px",
-                  lineHeight: "1.65",
-                }}
-              />
-            </div>
-          )}
+          </div>
 
           {/* Inline live pattern notices */}
-          {livePatterns.length > 0 && !inConversation && (
+          {livePatterns.length > 0 && (
             <div
               className="rounded-[24px] border p-4"
               style={{ borderColor: "#3d2a32", backgroundColor: "#1e1519" }}
@@ -2713,103 +2614,56 @@ function BookJourney({
               </div>
             </div>
           )}
-          {/* Start conversation or continue writing */}
-          {!inConversation ? (
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                data-ocid="journey.chapter.primary_button"
-                disabled={!canAdvance}
-                onClick={startConversation}
-                className="inline-flex items-center rounded-2xl px-5 py-3 font-extrabold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
-              >
-                {allChaptersDone ? "Finish chapter" : "Next page"}
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            /* Conversation thread */
-            <div
-              className="rounded-[28px] border p-5 space-y-4"
-              style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+          {/* Conversation thread */}
+          <div
+            className="rounded-[28px] border p-5 space-y-4"
+            style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+          >
+            <p
+              className="text-xs font-bold uppercase tracking-[0.2em]"
+              style={{ color: "#d9a6b7" }}
             >
-              <p
-                className="text-xs font-bold uppercase tracking-[0.2em]"
-                style={{ color: "#d9a6b7" }}
-              >
-                Conversation
-              </p>
-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                {conversationThread.map((entry, entryIdx) => (
-                  <div
-                    key={`${entry.role}-${entryIdx}-${entry.text.slice(0, 8)}`}
-                    className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
-                      entry.role === "prompt" ? "mr-8" : "ml-8"
-                    }`}
-                    style={{
-                      backgroundColor:
-                        entry.role === "prompt" ? "#2b2025" : "#331f28",
-                      color: entry.role === "prompt" ? "#dbc8cf" : "#f6dae3",
-                      borderLeft:
-                        entry.role === "prompt"
-                          ? "3px solid #4a323c"
-                          : "3px solid #efc1d0",
-                    }}
-                  >
-                    {entry.text}
-                  </div>
-                ))}
-                <div ref={threadEndRef} />
-              </div>
-              <div className="flex gap-3">
-                {selectedMode === "voice" ? (
-                  <div className="flex-1">
-                    <p className="text-xs mb-2" style={{ color: "#bfa9b2" }}>
-                      Speak your reply, then send
-                    </p>
-                    <textarea
-                      data-ocid="journey.thread.textarea"
-                      value={spokenTranscript || threadInput}
-                      onChange={(e) => setThreadInput(e.target.value)}
-                      placeholder={
-                        threadVoicePlaceholders[
-                          placeholderSeed % threadVoicePlaceholders.length
-                        ]
-                      }
-                      rows={5}
-                      className="w-full rounded-2xl border px-5 py-4 text-white outline-none"
-                      style={{
-                        borderColor: "#7a4a5c",
-                        backgroundColor: "#2b2025",
-                        boxShadow:
-                          "0 0 0 1px #5a3345, inset 0 2px 8px rgba(0,0,0,0.35)",
-                        fontSize: "16px",
-                        lineHeight: "1.65",
-                      }}
-                    />
-                  </div>
-                ) : (
+              Conversation
+            </p>
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+              {conversationThread.map((entry, entryIdx) => (
+                <div
+                  key={`${entry.role}-${entryIdx}-${entry.text.slice(0, 8)}`}
+                  className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
+                    entry.role === "prompt" ? "mr-8" : "ml-8"
+                  }`}
+                  style={{
+                    backgroundColor:
+                      entry.role === "prompt" ? "#2b2025" : "#331f28",
+                    color: entry.role === "prompt" ? "#dbc8cf" : "#f6dae3",
+                    borderLeft:
+                      entry.role === "prompt"
+                        ? "3px solid #4a323c"
+                        : "3px solid #efc1d0",
+                  }}
+                >
+                  {entry.text}
+                </div>
+              ))}
+              <div ref={threadEndRef} />
+            </div>
+            <div className="flex gap-3">
+              {selectedMode === "voice" ? (
+                <div className="flex-1">
+                  <p className="text-xs mb-2" style={{ color: "#bfa9b2" }}>
+                    Speak your reply, then send
+                  </p>
                   <textarea
                     data-ocid="journey.thread.textarea"
-                    value={threadInput}
-                    onChange={(e) => {
-                      setThreadInput(e.target.value);
-                      onCrisisDetected(e.target.value);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        submitThreadReply();
-                      }
-                    }}
+                    value={spokenTranscript || threadInput}
+                    onChange={(e) => setThreadInput(e.target.value)}
                     placeholder={
-                      threadTextPlaceholders[
-                        placeholderSeed % threadTextPlaceholders.length
+                      threadVoicePlaceholders[
+                        placeholderSeed % threadVoicePlaceholders.length
                       ]
                     }
                     rows={5}
-                    className="flex-1 rounded-2xl border px-5 py-4 text-white outline-none"
+                    className="w-full rounded-2xl border px-5 py-4 text-white outline-none"
                     style={{
                       borderColor: "#7a4a5c",
                       backgroundColor: "#2b2025",
@@ -2819,70 +2673,122 @@ function BookJourney({
                       lineHeight: "1.65",
                     }}
                   />
-                )}
-                <div className="flex flex-col gap-2 justify-end">
+                </div>
+              ) : (
+                <textarea
+                  data-ocid="journey.thread.textarea"
+                  value={threadInput}
+                  onChange={(e) => {
+                    setThreadInput(e.target.value);
+                    onCrisisDetected(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      submitThreadReply();
+                    }
+                  }}
+                  placeholder={
+                    threadTextPlaceholders[
+                      placeholderSeed % threadTextPlaceholders.length
+                    ]
+                  }
+                  rows={5}
+                  className="flex-1 rounded-2xl border px-5 py-4 text-white outline-none"
+                  style={{
+                    borderColor: "#7a4a5c",
+                    backgroundColor: "#2b2025",
+                    boxShadow:
+                      "0 0 0 1px #5a3345, inset 0 2px 8px rgba(0,0,0,0.35)",
+                    fontSize: "16px",
+                    lineHeight: "1.65",
+                  }}
+                />
+              )}
+              <div className="flex flex-col gap-2 justify-end">
+                {selectedMode === "voice" && voiceSupported && (
                   <button
                     type="button"
-                    data-ocid="journey.thread.submit_button"
-                    onClick={() => {
-                      if (selectedMode === "voice" && spokenTranscript) {
-                        setThreadInput(spokenTranscript);
-                        setSpokenTranscript("");
-                      }
-                      submitThreadReply();
-                    }}
-                    disabled={
-                      selectedMode === "voice"
-                        ? !spokenTranscript.trim() && !threadInput.trim()
-                        : !threadInput.trim()
+                    data-ocid="journey.mic.toggle"
+                    onClick={() =>
+                      listening ? stopListening() : startListening()
                     }
-                    className="rounded-2xl px-4 py-2 font-bold text-sm transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
+                    className="rounded-2xl border px-3 py-2 font-bold text-xs transition"
+                    style={{
+                      borderColor: listening ? "#efc1d0" : "#4a323c",
+                      backgroundColor: listening ? "#2a1d23" : "#2b2025",
+                      color: listening ? "#efc1d0" : "#a08090",
+                    }}
                   >
-                    Send
+                    <Mic
+                      className={
+                        listening ? "h-4 w-4 animate-pulse" : "h-4 w-4"
+                      }
+                    />
                   </button>
-                </div>
-              </div>
-              <div
-                className="flex flex-wrap gap-3 pt-2 border-t"
-                style={{ borderColor: "#3d2a32" }}
-              >
+                )}
                 <button
                   type="button"
-                  data-ocid="journey.thread.move_on.button"
-                  onClick={finishChapterAndAdvance}
-                  className="text-sm rounded-2xl px-4 py-2 font-bold border transition hover:opacity-80"
-                  style={{
-                    borderColor: "#76515e",
-                    color: "#f4d6df",
-                    backgroundColor: "transparent",
+                  data-ocid="journey.thread.submit_button"
+                  onClick={() => {
+                    if (selectedMode === "voice" && spokenTranscript) {
+                      submitThreadReply(spokenTranscript);
+                      setSpokenTranscript("");
+                    } else {
+                      submitThreadReply();
+                    }
                   }}
+                  disabled={
+                    selectedMode === "voice"
+                      ? !spokenTranscript.trim() && !threadInput.trim()
+                      : !threadInput.trim()
+                  }
+                  className="rounded-2xl px-4 py-2 font-bold text-sm transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
                 >
-                  Ready to move on →
+                  Send
                 </button>
-                {(() => {
-                  const userMessages = conversationThread.filter(
-                    (e) => e.role === "user",
-                  );
-                  const lastUser = userMessages[userMessages.length - 1];
-                  const showContinuePrompt =
-                    userMessages.length >= 4 ||
-                    (lastUser &&
-                      lastUser.text.length > 80 &&
-                      !vagueSignals.test(lastUser.text) &&
-                      !minimizingSignals.test(lastUser.text));
-                  return showContinuePrompt ? (
-                    <p
-                      className="text-xs self-center"
-                      style={{ color: "#bfa9b2" }}
-                    >
-                      I think we got somewhere. Continue when you're ready.
-                    </p>
-                  ) : null;
-                })()}
               </div>
             </div>
-          )}
+            <div
+              className="flex flex-wrap gap-3 pt-2 border-t"
+              style={{ borderColor: "#3d2a32" }}
+            >
+              <button
+                type="button"
+                data-ocid="journey.thread.move_on.button"
+                onClick={finishChapterAndAdvance}
+                className="text-sm rounded-2xl px-4 py-2 font-bold border transition hover:opacity-80"
+                style={{
+                  borderColor: "#76515e",
+                  color: "#f4d6df",
+                  backgroundColor: "transparent",
+                }}
+              >
+                Ready to move on →
+              </button>
+              {(() => {
+                const userMessages = conversationThread.filter(
+                  (e) => e.role === "user",
+                );
+                const lastUser = userMessages[userMessages.length - 1];
+                const showContinuePrompt =
+                  userMessages.length >= 4 ||
+                  (lastUser &&
+                    lastUser.text.length > 80 &&
+                    !vagueSignals.test(lastUser.text) &&
+                    !minimizingSignals.test(lastUser.text));
+                return showContinuePrompt ? (
+                  <p
+                    className="text-xs self-center"
+                    style={{ color: "#bfa9b2" }}
+                  >
+                    I think we got somewhere. Continue when you're ready.
+                  </p>
+                ) : null;
+              })()}
+            </div>
+          </div>
         </motion.div>
       )}
 
@@ -3110,9 +3016,148 @@ function BookJourney({
             </div>
           )}
 
+          {/* Mirror Analysis Cards */}
+          {mirrorAnalysis &&
+            (() => {
+              const conf = getConfidence(mirrorAnalysis.woundScores);
+              return (
+                <>
+                  {/* Core Wound Detection Card */}
+                  <div
+                    className="rounded-[28px] border p-5"
+                    style={{
+                      borderColor: "#3d2a32",
+                      backgroundColor: "#24181d",
+                    }}
+                  >
+                    <p
+                      className="text-xs font-bold uppercase tracking-[0.2em] mb-3"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      Core wound detected
+                    </p>
+                    <p
+                      className="text-base font-extrabold"
+                      style={{ color: "#f5e6ec" }}
+                    >
+                      {woundLabels[mirrorAnalysis.primaryWound] ||
+                        mirrorAnalysis.primaryWound}
+                    </p>
+                    {mirrorAnalysis.secondaryWound && (
+                      <p className="text-sm mt-1" style={{ color: "#b8788e" }}>
+                        Undercurrent:{" "}
+                        {woundLabels[mirrorAnalysis.secondaryWound] ||
+                          mirrorAnalysis.secondaryWound}
+                      </p>
+                    )}
+                    <span
+                      className="inline-block mt-2 text-xs px-2 py-1 rounded-full"
+                      style={{
+                        backgroundColor:
+                          conf.level === "high"
+                            ? "#3a1520"
+                            : conf.level === "medium"
+                              ? "#2a0f18"
+                              : "#1e0c14",
+                        color:
+                          conf.level === "high"
+                            ? "#e8a0b8"
+                            : conf.level === "medium"
+                              ? "#c084a0"
+                              : "#9a6070",
+                      }}
+                    >
+                      {conf.label} confidence
+                    </span>
+                  </div>
+
+                  {/* Pattern Evidence Card */}
+                  <div
+                    className="rounded-[28px] border p-5"
+                    style={{
+                      borderColor: "#3d2a32",
+                      backgroundColor: "#24181d",
+                    }}
+                  >
+                    <p
+                      className="text-xs font-bold uppercase tracking-[0.2em] mb-3"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      Pattern evidence
+                    </p>
+                    {mirrorAnalysis.phraseHits &&
+                    mirrorAnalysis.phraseHits.length > 0 ? (
+                      <div className="space-y-1">
+                        {mirrorAnalysis.phraseHits.slice(0, 3).map((hit) => (
+                          <p
+                            key={hit.phrase}
+                            className="text-sm italic"
+                            style={{ color: "#c8909e" }}
+                          >
+                            &ldquo;{hit.phrase}&rdquo;
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm" style={{ color: "#9a6878" }}>
+                        More entries will sharpen the pattern over time.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Mirror Mode Card */}
+                  <div
+                    className="rounded-[28px] border p-5"
+                    style={{
+                      borderColor: "#3d2a32",
+                      backgroundColor: "#24181d",
+                    }}
+                  >
+                    <p
+                      className="text-xs font-bold uppercase tracking-[0.2em] mb-3"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      Mirror
+                    </p>
+                    <p
+                      className="text-sm leading-relaxed"
+                      style={{ color: "#f0d8e4" }}
+                    >
+                      {conf.level === "low"
+                        ? `There may be something around ${woundLabels[mirrorAnalysis.primaryWound] || mirrorAnalysis.primaryWound} here. ${mirrorAnalysis.mirrorMode}`
+                        : mirrorAnalysis.mirrorMode}
+                    </p>
+                  </div>
+
+                  {/* Loop Interruption Card */}
+                  <div
+                    className="rounded-[28px] border p-5"
+                    style={{
+                      borderColor: "#3d2a32",
+                      backgroundColor: "#24181d",
+                    }}
+                  >
+                    <p
+                      className="text-xs font-bold uppercase tracking-[0.2em] mb-3"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      One thing to try
+                    </p>
+                    <p
+                      className="text-sm leading-relaxed"
+                      style={{ color: "#e8c8d4" }}
+                    >
+                      {mirrorAnalysis.loopInterruption}
+                    </p>
+                  </div>
+                </>
+              );
+            })()}
+
           {/* Pattern history across sessions */}
           {(() => {
             const historyInsights = getHistoryInsights();
+            const mirrorInsights = getMirrorInsights(mirrorHistory);
             return (
               <div
                 className="rounded-[28px] border p-5 space-y-3"
@@ -3127,6 +3172,43 @@ function BookJourney({
                     ? ` · ${historyInsights.count} session${historyInsights.count === 1 ? "" : "s"}`
                     : ""}
                 </p>
+                {mirrorInsights?.topWoundTrend ? (
+                  <div
+                    className="rounded-2xl p-4 mb-2"
+                    style={{ backgroundColor: "#2b2025" }}
+                  >
+                    <p
+                      className="text-xs font-semibold mb-1"
+                      style={{ color: "#d9a6b7" }}
+                    >
+                      Wound trend
+                    </p>
+                    <p
+                      className="text-sm leading-relaxed"
+                      style={{ color: "#dbc8cf" }}
+                    >
+                      {woundLabels[mirrorInsights.topWoundTrend.wound] ||
+                        mirrorInsights.topWoundTrend.wound}{" "}
+                      — {mirrorInsights.topWoundTrend.label}
+                    </p>
+                    {mirrorInsights.recentShift && (
+                      <p
+                        className="text-xs italic mt-2"
+                        style={{ color: "#9a7888" }}
+                      >
+                        {mirrorInsights.recentShift}
+                      </p>
+                    )}
+                    {mirrorInsights.quietInference && (
+                      <p
+                        className="text-xs italic mt-1"
+                        style={{ color: "#8a6878" }}
+                      >
+                        {mirrorInsights.quietInference}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
                 {historyInsights ? (
                   [
                     { label: "Emotion trend", data: historyInsights.emotions },
