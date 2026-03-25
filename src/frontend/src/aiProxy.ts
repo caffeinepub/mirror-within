@@ -17,8 +17,9 @@
 // Configuration — edit these when your proxy is ready
 // ---------------------------------------------------------------------------
 
-export const AI_PROXY_ENDPOINT = ""; // e.g. "https://your-proxy.example.com/api/mirror"
-export const AI_PROXY_ENABLED = false; // flip to true when proxy is live
+export const AI_PROXY_ENDPOINT =
+  "https://mirror-within-proxy.onrender.com/api/reflect";
+export const AI_PROXY_ENABLED = true;
 
 // ---------------------------------------------------------------------------
 // Types
