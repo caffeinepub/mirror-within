@@ -1,28 +1,46 @@
 /**
- * aiProxy.ts — Mirror Within external AI proxy integration point
+ * aiProxy.ts — Mirror Within external AI proxy integration
  *
- * This module prepares and sends the current reflection context to an external
- * AI proxy server. The proxy calls OpenAI (or another LLM) server-side, which
- * keeps the API key completely out of the browser.
- *
- * HOW TO ACTIVATE:
- *   1. Set AI_PROXY_ENDPOINT to your proxy server URL.
- *   2. Flip AI_PROXY_ENABLED to true.
- *
- * While disabled (default), sendToAIProxy always returns null and the existing
- * local Mirror logic continues completely unchanged.
+ * Sends the user's reflection text to the live Render backend and returns
+ * the AI reply. Request shape: { prompt: string }
+ * Response shape: { reply: string }
  */
-
-// ---------------------------------------------------------------------------
-// Configuration — edit these when your proxy is ready
-// ---------------------------------------------------------------------------
 
 export const AI_PROXY_ENDPOINT =
   "https://mirror-within-proxy.onrender.com/api/reflect";
 export const AI_PROXY_ENABLED = true;
 
+/**
+ * Send a user reflection prompt to the backend and return the reply string.
+ * Returns null on any failure so the caller can fall back to local logic.
+ */
+export async function getAIReply(prompt: string): Promise<string | null> {
+  if (!AI_PROXY_ENABLED || !AI_PROXY_ENDPOINT) return null;
+  try {
+    const response = await fetch(AI_PROXY_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!response.ok) {
+      console.warn(
+        `[Mirror Within] AI proxy responded with status ${response.status}. Falling back to local logic.`,
+      );
+      return null;
+    }
+    const data = await response.json();
+    return typeof data.reply === "string" ? data.reply : null;
+  } catch (err) {
+    console.warn(
+      "[Mirror Within] AI proxy request failed. Falling back to local logic.",
+      err,
+    );
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Types
+// Legacy exports kept so existing imports in App.tsx don't break
 // ---------------------------------------------------------------------------
 
 export type ConversationTurn = { role: "prompt" | "user"; text: string };
@@ -56,10 +74,6 @@ export type AIProxyResponse = {
   reasoningTags: string[];
 };
 
-// ---------------------------------------------------------------------------
-// Helper — derive confidence level from wound evidence
-// ---------------------------------------------------------------------------
-
 export function deriveConfidence(
   woundScores: Record<string, number>,
   phraseHits: AIProxyRequest["phraseHits"],
@@ -78,39 +92,12 @@ export function deriveConfidence(
   return "low";
 }
 
-// ---------------------------------------------------------------------------
-// Main send function
-// ---------------------------------------------------------------------------
-
 export async function sendToAIProxy(
-  payload: AIProxyRequest,
+  _payload: AIProxyRequest,
 ): Promise<AIProxyResponse | null> {
-  if (!AI_PROXY_ENABLED || !AI_PROXY_ENDPOINT) return null;
-  try {
-    const response = await fetch(AI_PROXY_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      console.warn(
-        `[Mirror Within] AI proxy responded with status ${response.status}. Falling back to local logic.`,
-      );
-      return null;
-    }
-    return (await response.json()) as AIProxyResponse;
-  } catch (err) {
-    console.warn(
-      "[Mirror Within] AI proxy request failed. Falling back to local logic.",
-      err,
-    );
-    return null;
-  }
+  // Replaced by getAIReply — kept for compatibility
+  return null;
 }
-
-// ---------------------------------------------------------------------------
-// Payload builder — assembles full reflection context from local state
-// ---------------------------------------------------------------------------
 
 export function buildAIProxyPayload(opts: {
   latestEntry: string;
@@ -129,7 +116,6 @@ export function buildAIProxyPayload(opts: {
   };
 }): AIProxyRequest {
   const { latestEntry, conversationThread, analysis } = opts;
-
   let recentMirrorEntries: object[] = [];
   try {
     const raw = localStorage.getItem("mirrorEntries");
@@ -138,7 +124,6 @@ export function buildAIProxyPayload(opts: {
   } catch {
     recentMirrorEntries = [];
   }
-
   let recentMirrorRecentQuestions: string[] = [];
   try {
     const raw = localStorage.getItem("mirrorRecentQuestions");
@@ -146,14 +131,12 @@ export function buildAIProxyPayload(opts: {
   } catch {
     recentMirrorRecentQuestions = [];
   }
-
   const confidence = deriveConfidence(
     analysis.woundScores,
     analysis.phraseHits,
     analysis.contradictionHits,
     analysis.intensityHits,
   );
-
   return {
     latestEntry,
     recentConversationTurns: conversationThread.slice(-10),

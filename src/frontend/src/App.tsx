@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildAIProxyPayload, sendToAIProxy } from "./aiProxy";
+import { buildAIProxyPayload, getAIReply, sendToAIProxy } from "./aiProxy";
 import {
   type MirrorAnalysis,
   analyzeEntry,
@@ -2220,6 +2220,7 @@ function BookJourney({
   );
   const [threadInput, setThreadInput] = useState("");
   const [_inConversation, setInConversation] = useState(false);
+  const [aiReplyLoading, setAiReplyLoading] = useState(false);
   const [detailedAnalysis, setDetailedAnalysis] =
     useState<DetailedAnalysis | null>(null);
   const [mirrorAnalysis, setMirrorAnalysis] = useState<MirrorAnalysis | null>(
@@ -2364,33 +2365,52 @@ function BookJourney({
     setListening(false);
   }
 
-  function submitThreadReply(overrideText?: string) {
+  async function submitThreadReply(overrideText?: string) {
     const text = overrideText || threadInput.trim();
     if (!text) return;
-    const userEntries = conversationThread.filter((e) => e.role === "user");
-    const exchangeCount = userEntries.length + 1;
-    // Use adaptive questions from mirrorLogic if we have mirror analysis, otherwise fall back
-    let followup: string;
-    if (exchangeCount >= 2 && selectedPath) {
-      const adaptiveQs = getAdaptiveQuestions(
-        selectedPath,
-        mirrorAnalysis?.primaryWound ?? null,
-        mirrorHistory.length,
-      );
-      followup =
-        adaptiveQs[(exchangeCount - 1) % adaptiveQs.length] ??
-        generateFollowup(text, selectedPath ?? "", exchangeCount);
-    } else {
-      followup = generateFollowup(text, selectedPath ?? "", exchangeCount);
-    }
-    const newThread = [
+
+    // Append user message immediately
+    const withUser = [
       ...conversationThread,
       { role: "user" as const, text: text },
-      { role: "prompt" as const, text: followup },
     ];
-    setConversationThread(newThread);
+    setConversationThread(withUser);
     onCrisisDetected(text);
     setThreadInput("");
+    setAiReplyLoading(true);
+    setTimeout(() => {
+      threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 50);
+
+    // Try live AI proxy first
+    const aiReply = await getAIReply(text);
+
+    let followup: string;
+    if (aiReply) {
+      followup = aiReply;
+    } else {
+      // Fall back to local adaptive/generated question
+      const userEntries = withUser.filter((e) => e.role === "user");
+      const exchangeCount = userEntries.length;
+      if (exchangeCount >= 2 && selectedPath) {
+        const adaptiveQs = getAdaptiveQuestions(
+          selectedPath,
+          mirrorAnalysis?.primaryWound ?? null,
+          mirrorHistory.length,
+        );
+        followup =
+          adaptiveQs[(exchangeCount - 1) % adaptiveQs.length] ??
+          generateFollowup(text, selectedPath ?? "", exchangeCount);
+      } else {
+        followup = generateFollowup(text, selectedPath ?? "", exchangeCount);
+      }
+    }
+
+    setConversationThread([
+      ...withUser,
+      { role: "prompt" as const, text: followup },
+    ]);
+    setAiReplyLoading(false);
     setTimeout(() => {
       threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 50);
@@ -2896,6 +2916,20 @@ function BookJourney({
                   {entry.text}
                 </div>
               ))}
+              {aiReplyLoading && (
+                <div
+                  className="rounded-2xl px-4 py-3 text-sm leading-6 mr-8"
+                  style={{
+                    backgroundColor: "#2b2025",
+                    color: "#dbc8cf",
+                    borderLeft: "3px solid #4a323c",
+                  }}
+                >
+                  <span className="opacity-60 animate-pulse">
+                    Mirror is reflecting…
+                  </span>
+                </div>
+              )}
               <div ref={threadEndRef} />
             </div>
             <div className="flex gap-3">
@@ -2990,9 +3024,10 @@ function BookJourney({
                     }
                   }}
                   disabled={
-                    selectedMode === "voice"
+                    aiReplyLoading ||
+                    (selectedMode === "voice"
                       ? !spokenTranscript.trim() && !threadInput.trim()
-                      : !threadInput.trim()
+                      : !threadInput.trim())
                   }
                   className="rounded-2xl px-4 py-2 font-bold text-sm transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ backgroundColor: "#efc1d0", color: "#1d1418" }}
