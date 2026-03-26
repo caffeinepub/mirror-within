@@ -14,6 +14,13 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildAIProxyPayload, getAIReply, sendToAIProxy } from "./aiProxy";
 import {
+  dbGetAllFeedback,
+  dbGetEntries,
+  dbSaveEntry,
+  dbSaveFeedback,
+} from "./db";
+import { useActor } from "./hooks/useActor";
+import {
   type MirrorAnalysis,
   analyzeEntry,
   buildMirror,
@@ -2059,22 +2066,38 @@ function GardenPanel({
 }
 
 // ─── FeedbackViewer ──────────────────────────────────────────────────────────
-function FeedbackViewer({ onBack }: { onBack: () => void }) {
-  const entries: {
-    id: string;
-    userName: string;
-    message: string;
-    screen: string;
-    createdAt: string;
-  }[] = (() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("mirror_within_feedback_v4") || "[]",
+function FeedbackViewer({ onBack, actor }: { onBack: () => void; actor: any }) {
+  const [entries, setEntries] = useState<FeedbackEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      let local: FeedbackEntry[] = [];
+      try {
+        local = JSON.parse(
+          localStorage.getItem("mirror_within_feedback_v4") || "[]",
+        );
+      } catch {}
+
+      let remote: FeedbackEntry[] = [];
+      if (actor) {
+        try {
+          remote = await dbGetAllFeedback(actor);
+        } catch (_) {}
+      }
+
+      // Merge and deduplicate by id; remote takes precedence
+      const map = new Map<string, FeedbackEntry>();
+      for (const e of [...local, ...remote]) map.set(e.id, e);
+      const merged = Array.from(map.values()).sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
-    } catch {
-      return [];
+      setEntries(merged);
+      setLoading(false);
     }
-  })();
+    load();
+  }, [actor]);
 
   return (
     <motion.div
@@ -2104,7 +2127,17 @@ function FeedbackViewer({ onBack }: { onBack: () => void }) {
           Feedback
         </h2>
       </div>
-      {entries.length === 0 ? (
+      {loading ? (
+        <div
+          className="rounded-[24px] border p-6 text-center"
+          style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
+          data-ocid="feedback.loading_state"
+        >
+          <p className="text-sm leading-6" style={{ color: "#dbc8cf" }}>
+            Loading feedback…
+          </p>
+        </div>
+      ) : entries.length === 0 ? (
         <div
           className="rounded-[24px] border p-6 text-center"
           style={{ borderColor: "#3d2a32", backgroundColor: "#24181d" }}
@@ -2177,6 +2210,7 @@ function BookJourney({
   locationLabel,
   onShareLocation,
   onEndSession,
+  actor,
 }: {
   step: number;
   sharedName: string;
@@ -2206,6 +2240,7 @@ function BookJourney({
   locationLabel: string;
   onShareLocation: () => void;
   onEndSession: () => void;
+  actor: any;
 }) {
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
@@ -2402,8 +2437,26 @@ function BookJourney({
       threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 50);
 
-    // Try live AI proxy first
-    const aiReply = await getAIReply(text);
+    // Try live AI proxy first — prepend prior session context if available
+    let contextualPrompt = text;
+    if (actor) {
+      try {
+        const priorEntries = await dbGetEntries(actor);
+        const recent = priorEntries.slice(0, 3);
+        if (recent.length > 0) {
+          const ctx = recent
+            .map(
+              (e) =>
+                `[Prior session: ${e.entryPoint} / ${e.lens}] ${e.summary}`,
+            )
+            .join("\n");
+          contextualPrompt = `${ctx}\n\nCurrent reflection: ${text}`;
+        }
+      } catch (_) {
+        // silently ignore — fall back to bare prompt
+      }
+    }
+    const aiReply = await getAIReply(contextualPrompt);
 
     let followup: string;
     if (aiReply) {
@@ -2517,6 +2570,22 @@ function BookJourney({
           );
         }
       });
+      // Fire-and-forget: persist to backend if actor is available
+      if (actor) {
+        const lastAiReply =
+          conversationThread.filter((e) => e.role === "prompt").slice(-1)[0]
+            ?.text ?? "";
+        dbSaveEntry(actor, {
+          storyName: sharedName,
+          inputMode: selectedMode ?? "text",
+          entryPoint: selectedPath ?? "",
+          lens: activePath?.label ?? "",
+          rawText: `${allResponses} ${fullResponse}`,
+          aiReply: lastAiReply,
+          conversationThread,
+          analysis: ma,
+        }).catch(() => {});
+      }
       onSetStep(5);
     }
   }
@@ -3009,6 +3078,19 @@ function BookJourney({
                     lineHeight: "1.65",
                   }}
                 />
+              )}
+              {selectedMode === "voice" && !voiceSupported && (
+                <div
+                  className="rounded-[20px] border p-4 text-center text-sm"
+                  style={{
+                    borderColor: "#4a323c",
+                    backgroundColor: "#24181d",
+                    color: "#dbc8cf",
+                  }}
+                >
+                  Voice input isn&apos;t supported on this browser. Try Chrome
+                  or Edge on desktop, or switch to text below.
+                </div>
               )}
               <div className="flex flex-col gap-2 justify-end">
                 {selectedMode === "voice" && voiceSupported && (
@@ -3749,6 +3831,7 @@ function BookJourney({
 
 export default function App() {
   const [hydrated, setHydrated] = useState(false);
+  const { actor } = useActor();
   const [screen, setScreen] = useState<Screen>("journey");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -3957,6 +4040,9 @@ export default function App() {
     const nextFeedback = [nextEntry, ...feedbackEntries];
     setFeedbackEntries(nextFeedback);
     localStorage.setItem(FEEDBACK_KEY, JSON.stringify(nextFeedback));
+    if (actor) {
+      dbSaveFeedback(actor, nextEntry).catch(() => {});
+    }
     setFeedbackText("");
   }
 
@@ -4590,6 +4676,7 @@ export default function App() {
                       locationLabel={locationLabel}
                       onShareLocation={requestLocation}
                       onEndSession={clearSession}
+                      actor={actor}
                     />
                   )}
 
@@ -4616,7 +4703,10 @@ export default function App() {
                   {screen === "creator" && <CreatorScreen />}
 
                   {screen === "feedback" && (
-                    <FeedbackViewer onBack={() => setScreen("journey")} />
+                    <FeedbackViewer
+                      onBack={() => setScreen("journey")}
+                      actor={actor}
+                    />
                   )}
 
                   {screen === "garden" && (
