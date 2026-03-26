@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   BookOpen,
   ChevronRight,
+  Clock,
   Feather,
   MessageSquare,
   Mic,
@@ -14,6 +15,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildAIProxyPayload, getAIReply, sendToAIProxy } from "./aiProxy";
 import {
+  dbDeleteEntry,
   dbGetAllFeedback,
   dbGetEntries,
   dbSaveEntry,
@@ -37,7 +39,8 @@ type Screen =
   | "support"
   | "creator"
   | "feedback"
-  | "garden";
+  | "garden"
+  | "entries";
 
 type FeedbackEntry = {
   id: string;
@@ -1079,22 +1082,22 @@ function PathPreview({
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-lg font-extrabold" style={{ color: "#fff4f8" }}>
+          <p className="text-lg font-extrabold" style={{ color: "#F3F5FF" }}>
             {path.label}
           </p>
           <p
             className="mt-1 text-sm font-semibold"
-            style={{ color: "#efc1d0" }}
+            style={{ color: "#9AA3B2" }}
           >
             {path.tone}
           </p>
-          <p className="mt-3 text-sm leading-6" style={{ color: "#d5c4cb" }}>
+          <p className="mt-3 text-sm leading-6" style={{ color: "#9AA3B2" }}>
             {path.blurb}
           </p>
         </div>
         <span
           className="self-start rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide whitespace-nowrap"
-          style={{ borderColor: "#4a323c", color: "#f0d7df" }}
+          style={{ borderColor: "#4a323c", color: "#9AA3B2" }}
         >
           {path.tag}
         </span>
@@ -2159,6 +2162,227 @@ function GardenPanel({
 }
 
 // ─── FeedbackViewer ──────────────────────────────────────────────────────────
+
+// ─── Past Entries Screen ──────────────────────────────────────────────────────
+function PastEntriesScreen({
+  actor,
+  onBack,
+}: { actor: any; onBack: () => void }) {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    dbGetEntries(actor).then((data) => {
+      setEntries(
+        [...data].sort((a, b) => Number(b.timestamp) - Number(a.timestamp)),
+      );
+      setLoading(false);
+    });
+  }, [actor]);
+
+  const entryPathLabels: Record<string, string> = {
+    surface: "Surface level",
+    attacked: "Ok I feel attacked",
+    love: "Love & attachment",
+    control: "Control",
+    grief: "Grief",
+    identity: "Identity",
+    body: "Body",
+  };
+
+  function formatDate(ts: bigint): string {
+    const d = new Date(Number(ts));
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    await dbDeleteEntry(actor, id);
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setDeletingId(null);
+  }
+
+  return (
+    <div style={{ padding: "24px 0", minHeight: "300px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          marginBottom: "24px",
+        }}
+      >
+        <button
+          data-ocid="entries.back_button"
+          type="button"
+          onClick={onBack}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "#9AA3B2",
+            padding: "4px",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <ArrowLeft style={{ width: "16px", height: "16px" }} />
+        </button>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: "20px",
+            fontWeight: 600,
+            color: "#F3F5FF",
+          }}
+        >
+          Past Reflections
+        </h2>
+      </div>
+
+      {loading && (
+        <div
+          data-ocid="entries.loading_state"
+          style={{
+            textAlign: "center",
+            color: "#9AA3B2",
+            padding: "40px 0",
+            fontSize: "14px",
+          }}
+        >
+          Loading...
+        </div>
+      )}
+
+      {!loading && entries.length === 0 && (
+        <div
+          data-ocid="entries.empty_state"
+          style={{
+            textAlign: "center",
+            color: "#9AA3B2",
+            padding: "40px 0",
+            fontSize: "14px",
+          }}
+        >
+          No reflections saved yet.
+        </div>
+      )}
+
+      {!loading && entries.length > 0 && (
+        <div
+          data-ocid="entries.list"
+          style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+        >
+          {entries.map((entry, idx) => (
+            <div
+              key={entry.id}
+              data-ocid={`entries.item.${idx + 1}`}
+              style={{
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: "16px",
+                padding: "16px",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  marginBottom: "8px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "#B8A1FF",
+                      background: "rgba(184,161,255,0.1)",
+                      borderRadius: "20px",
+                      padding: "2px 10px",
+                    }}
+                  >
+                    {entryPathLabels[entry.entryPoint] ?? entry.entryPoint}
+                  </span>
+                  {entry.lens && (
+                    <span style={{ fontSize: "11px", color: "#8E97AA" }}>
+                      {entry.lens}
+                    </span>
+                  )}
+                </div>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "10px" }}
+                >
+                  <span style={{ fontSize: "11px", color: "#8E97AA" }}>
+                    {formatDate(entry.timestamp)}
+                  </span>
+                  <button
+                    data-ocid={`entries.delete_button.${idx + 1}`}
+                    type="button"
+                    onClick={() => handleDelete(entry.id)}
+                    disabled={deletingId === entry.id}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: "11px",
+                      color: "#c0625a",
+                      padding: "0",
+                      opacity: deletingId === entry.id ? 0.5 : 1,
+                    }}
+                  >
+                    {deletingId === entry.id ? "removing..." : "delete"}
+                  </button>
+                </div>
+              </div>
+              {entry.rawText && (
+                <p
+                  style={{
+                    margin: "0 0 8px",
+                    fontSize: "14px",
+                    color: "#D8DEEA",
+                    lineHeight: "1.6",
+                  }}
+                >
+                  {entry.rawText.length > 120
+                    ? `${entry.rawText.slice(0, 120)}…`
+                    : entry.rawText}
+                </p>
+              )}
+              {entry.aiReply && (
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "13px",
+                    color: "#9AA3B2",
+                    lineHeight: "1.6",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {entry.aiReply}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeedbackViewer({ onBack, actor }: { onBack: () => void; actor: any }) {
   const [entries, setEntries] = useState<FeedbackEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2709,7 +2933,7 @@ function BookJourney({
           <div>
             <h2
               className="text-3xl font-extrabold leading-tight font-display"
-              style={{ color: "#fff4f8" }}
+              style={{ color: "#F3F5FF" }}
             >
               Whose story are we reading today?
             </h2>
@@ -2790,13 +3014,13 @@ function BookJourney({
           <div>
             <h2
               className="text-3xl font-extrabold leading-tight font-display"
-              style={{ color: "#fff4f8" }}
+              style={{ color: "#F3F5FF" }}
             >
               Whose story are we reading today?
             </h2>
             <p
               className="mt-3 max-w-2xl text-sm leading-7"
-              style={{ color: "#d5c4cb" }}
+              style={{ color: "#9AA3B2" }}
             >
               Begin where it feels safest. The deeper layers will reveal
               themselves.
@@ -3933,6 +4157,137 @@ function BookJourney({
   );
 }
 
+// ─── CosmicBackground ─────────────────────────────────────────────────────────
+const _cosmicStars = [
+  { x: 40, y: 120, r: 0.9, o: 0.35 },
+  { x: 110, y: 90, r: 1.1, o: 0.5 },
+  { x: 180, y: 140, r: 0.8, o: 0.3 },
+  { x: 260, y: 110, r: 1.0, o: 0.45 },
+  { x: 55, y: 220, r: 1.2, o: 0.4 },
+  { x: 130, y: 260, r: 0.9, o: 0.55 },
+  { x: 210, y: 300, r: 1.1, o: 0.35 },
+  { x: 310, y: 240, r: 0.8, o: 0.5 },
+  { x: 25, y: 360, r: 1.0, o: 0.4 },
+  { x: 90, y: 410, r: 1.2, o: 0.3 },
+  { x: 165, y: 390, r: 0.9, o: 0.55 },
+  { x: 250, y: 440, r: 1.1, o: 0.45 },
+  { x: 340, y: 380, r: 0.8, o: 0.35 },
+  { x: 70, y: 500, r: 1.0, o: 0.5 },
+  { x: 150, y: 480, r: 1.2, o: 0.4 },
+  { x: 230, y: 530, r: 0.9, o: 0.3 },
+  { x: 310, y: 500, r: 1.1, o: 0.55 },
+  { x: 45, y: 600, r: 0.8, o: 0.45 },
+  { x: 120, y: 640, r: 1.0, o: 0.35 },
+  { x: 200, y: 610, r: 1.2, o: 0.5 },
+  { x: 285, y: 660, r: 0.9, o: 0.4 },
+  { x: 100, y: 700, r: 1.1, o: 0.3 },
+  { x: 200, y: 740, r: 0.8, o: 0.55 },
+  { x: 300, y: 720, r: 1.0, o: 0.45 },
+  { x: 360, y: 780, r: 1.2, o: 0.35 },
+  { x: 15, y: 155, r: 0.9, o: 0.4 },
+  { x: 195, y: 55, r: 1.0, o: 0.5 },
+  { x: 335, y: 145, r: 1.1, o: 0.35 },
+  { x: 270, y: 355, r: 0.8, o: 0.45 },
+  { x: 375, y: 470, r: 1.2, o: 0.3 },
+  { x: 8, y: 480, r: 0.9, o: 0.55 },
+  { x: 355, y: 560, r: 1.0, o: 0.4 },
+  { x: 175, y: 575, r: 1.1, o: 0.35 },
+  { x: 60, y: 760, r: 0.8, o: 0.5 },
+  { x: 240, y: 810, r: 1.2, o: 0.45 },
+  { x: 320, y: 840, r: 0.9, o: 0.3 },
+  { x: 130, y: 820, r: 1.0, o: 0.55 },
+  { x: 30, y: 860, r: 1.1, o: 0.4 },
+  { x: 380, y: 820, r: 0.8, o: 0.35 },
+  { x: 215, y: 880, r: 1.2, o: 0.5 },
+  { x: 90, y: 930, r: 0.9, o: 0.45 },
+  { x: 270, y: 960, r: 1.0, o: 0.3 },
+  { x: 350, y: 910, r: 1.1, o: 0.55 },
+  { x: 150, y: 975, r: 0.8, o: 0.4 },
+  { x: 40, y: 1000, r: 1.0, o: 0.35 },
+];
+
+function CosmicBackground() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 0,
+        background:
+          "linear-gradient(135deg, #05070F 0%, #0B1020 50%, #12182B 100%)",
+      }}
+    >
+      <svg
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+        }}
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+        role="presentation"
+      >
+        {/* Constellation lines */}
+        {[
+          { x1: 40, y1: 120, x2: 110, y2: 90 },
+          { x1: 110, y1: 90, x2: 180, y2: 140 },
+          { x1: 180, y1: 140, x2: 260, y2: 110 },
+          { x1: 70, y1: 500, x2: 150, y2: 480 },
+          { x1: 150, y1: 480, x2: 230, y2: 530 },
+          { x1: 230, y1: 530, x2: 310, y2: 500 },
+          { x1: 100, y1: 700, x2: 200, y2: 740 },
+          { x1: 200, y1: 740, x2: 300, y2: 720 },
+        ].map((line) => (
+          <line
+            key={`${line.x1}-${line.y1}-${line.x2}-${line.y2}`}
+            x1={line.x1}
+            y1={line.y1}
+            x2={line.x2}
+            y2={line.y2}
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="1"
+          />
+        ))}
+        {/* Stars */}
+        {_cosmicStars.map((s) => (
+          <circle
+            key={`${s.x}-${s.y}`}
+            cx={s.x}
+            cy={s.y}
+            r={s.r}
+            fill={`rgba(255,255,255,${s.o})`}
+          />
+        ))}
+      </svg>
+      {/* Glow layers */}
+      <div
+        style={{
+          position: "absolute",
+          top: 80,
+          left: -60,
+          width: 260,
+          height: 260,
+          borderRadius: "50%",
+          background: "rgba(184,161,255,0.07)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          bottom: 100,
+          right: -60,
+          width: 280,
+          height: 280,
+          borderRadius: "50%",
+          background: "rgba(125,175,255,0.05)",
+        }}
+      />
+    </div>
+  );
+}
+
 export default function App() {
   const [hydrated, setHydrated] = useState(false);
   const { actor } = useActor();
@@ -4335,6 +4690,7 @@ export default function App() {
     if (screen === "creator") return "Our Story";
     if (screen === "feedback") return "Feedback";
     if (screen === "garden") return "Garden";
+    if (screen === "entries") return "Past Entries";
     const labels = [
       "Welcome",
       "Entry Point",
@@ -4370,6 +4726,11 @@ export default function App() {
       label: "Story",
       target: "creator",
     },
+    {
+      icon: <Clock className="h-3.5 w-3.5" />,
+      label: "Entries",
+      target: "entries",
+    },
   ];
 
   const pageKey =
@@ -4383,111 +4744,10 @@ export default function App() {
         alignItems: "center",
         justifyContent: "center",
         padding: "24px",
-        background:
-          "linear-gradient(135deg, #0B1020 0%, #12182B 50%, #1A2238 100%)",
+        background: "#0B1020",
       }}
     >
-      {/* Cosmic star background */}
-      <svg
-        style={{
-          position: "fixed",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-        role="presentation"
-      >
-        <line
-          x1="72"
-          y1="128"
-          x2="138"
-          y2="92"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <line
-          x1="138"
-          y1="92"
-          x2="206"
-          y2="178"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <line
-          x1="206"
-          y1="178"
-          x2="298"
-          y2="108"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <line
-          x1="96"
-          y1="520"
-          x2="170"
-          y2="490"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <line
-          x1="170"
-          y1="490"
-          x2="242"
-          y2="560"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <line
-          x1="242"
-          y1="560"
-          x2="320"
-          y2="510"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <line
-          x1="70"
-          y1="650"
-          x2="150"
-          y2="700"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <line
-          x1="150"
-          y1="700"
-          x2="290"
-          y2="690"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="1"
-        />
-        <circle cx="24" cy="60" r="1.2" fill="rgba(255,255,255,0.7)" />
-        <circle cx="80" cy="130" r="1" fill="rgba(255,255,255,0.45)" />
-        <circle cx="140" cy="90" r="1.4" fill="rgba(255,255,255,0.6)" />
-        <circle cx="210" cy="180" r="1" fill="rgba(255,255,255,0.35)" />
-        <circle cx="300" cy="110" r="1.2" fill="rgba(255,255,255,0.55)" />
-        <circle cx="340" cy="220" r="1" fill="rgba(255,255,255,0.4)" />
-        <circle cx="45" cy="280" r="1.4" fill="rgba(255,255,255,0.5)" />
-        <circle cx="115" cy="340" r="1" fill="rgba(255,255,255,0.35)" />
-        <circle cx="180" cy="310" r="1.2" fill="rgba(255,255,255,0.6)" />
-        <circle cx="255" cy="390" r="1" fill="rgba(255,255,255,0.45)" />
-        <circle cx="330" cy="320" r="1.3" fill="rgba(255,255,255,0.55)" />
-        <circle cx="36" cy="470" r="1" fill="rgba(255,255,255,0.35)" />
-        <circle cx="94" cy="520" r="1.4" fill="rgba(255,255,255,0.6)" />
-        <circle cx="170" cy="490" r="1" fill="rgba(255,255,255,0.45)" />
-        <circle cx="240" cy="560" r="1.2" fill="rgba(255,255,255,0.5)" />
-        <circle cx="320" cy="510" r="1" fill="rgba(255,255,255,0.35)" />
-        <circle cx="70" cy="650" r="1.1" fill="rgba(255,255,255,0.5)" />
-        <circle cx="150" cy="700" r="1.3" fill="rgba(255,255,255,0.6)" />
-        <circle cx="290" cy="690" r="1" fill="rgba(255,255,255,0.4)" />
-        <circle cx="350" cy="760" r="1.2" fill="rgba(255,255,255,0.5)" />
-        <circle cx="100" cy="200" r="110" fill="rgba(184,161,255,0.04)" />
-        <circle cx="320" cy="600" r="120" fill="rgba(125,175,255,0.03)" />
-      </svg>
+      <CosmicBackground />
       {/* Global modals */}
       <AnimatePresence>
         {showCrisisModal && (
@@ -4908,6 +5168,13 @@ export default function App() {
                       savedChapters={savedChapters}
                       selectedPath={selectedPath}
                       profile={profile}
+                    />
+                  )}
+
+                  {screen === "entries" && (
+                    <PastEntriesScreen
+                      actor={actor}
+                      onBack={() => setScreen("journey")}
                     />
                   )}
                 </>
