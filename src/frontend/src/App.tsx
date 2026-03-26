@@ -2212,6 +2212,7 @@ function BookJourney({
   const [_voiceError, setVoiceError] = useState("");
   const [spokenTranscript, setSpokenTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
+  const crisisCallbackRef = useRef<(text: string) => void>(onCrisisDetected);
 
   // Conversation thread state
   type ThreadEntry = { role: "prompt" | "user"; text: string };
@@ -2309,7 +2310,12 @@ function BookJourney({
   );
   const nextQuestions = adaptiveQuestions[decision.action];
 
-  // Speech recognition setup
+  // Keep crisis callback ref current without re-initializing recognition
+  useEffect(() => {
+    crisisCallbackRef.current = onCrisisDetected;
+  }, [onCrisisDetected]);
+
+  // Speech recognition setup — runs once only
   useEffect(() => {
     const SpeechRecognition =
       typeof window !== "undefined"
@@ -2329,7 +2335,7 @@ function BookJourney({
       }
       const t = transcript.trim();
       setSpokenTranscript(t);
-      onCrisisDetected(t);
+      crisisCallbackRef.current(t);
     };
     recognition.onerror = () => {
       setVoiceError(
@@ -2339,8 +2345,13 @@ function BookJourney({
     };
     recognition.onend = () => setListening(false);
     recognitionRef.current = recognition;
-    return () => recognition.stop();
-  }, [onCrisisDetected]);
+    return () => {
+      try {
+        recognition.stop();
+      } catch (_) {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-seed conversation thread on Step 4 mount
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
@@ -2355,8 +2366,17 @@ function BookJourney({
   function startListening() {
     if (!recognitionRef.current) return;
     setVoiceError("");
-    setListening(true);
-    recognitionRef.current.start();
+    try {
+      recognitionRef.current.start();
+      setListening(true);
+    } catch (e: any) {
+      // InvalidStateError means already started — ignore
+      if (e?.name !== "InvalidStateError") {
+        setVoiceError("Could not start mic. Please try again.");
+      } else {
+        setListening(true);
+      }
+    }
   }
 
   function stopListening() {
