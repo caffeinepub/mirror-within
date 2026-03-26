@@ -4324,7 +4324,7 @@ export default function App() {
       "Welcome",
       "Entry Point",
       "Expression",
-      `Ch ${journeyStep > 3 ? chapterIndex + 1 : 1}/3`,
+      `Ch ${journeyStep > 3 ? chapterIndex + 1 : 1}/${entryPaths.find((p) => p.id === selectedPath)?.questions?.length ?? 5}`,
       "Recap",
     ];
     return labels[journeyStep - 1] || "Mirror";
