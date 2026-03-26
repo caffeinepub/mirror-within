@@ -114,6 +114,7 @@ const entryPaths = [
     tone: "gentle",
     blurb: "Start where it feels safest. Peel back one layer at a time.",
     tag: "surface",
+    accent: "rgba(255,255,255,0.04)",
     chapterTitle: "Where the story begins",
     questions: [
       "What happened today that is still sitting with you?",
@@ -130,6 +131,7 @@ const entryPaths = [
     tone: "sharp",
     blurb: "For when something hit a nerve and you know it.",
     tag: "attacked",
+    accent: "rgba(184,161,255,0.08)",
     chapterTitle: "What got under your skin",
     questions: [
       "What annoyed you today more than it should have?",
@@ -146,6 +148,7 @@ const entryPaths = [
     tone: "tender",
     blurb: "Trace what closeness, distance, and longing are revealing.",
     tag: "love",
+    accent: "rgba(206,168,255,0.08)",
     chapterTitle: "What your heart is doing",
     questions: [
       "Who has been on your mind lately, and why?",
@@ -162,6 +165,7 @@ const entryPaths = [
     tone: "intense",
     blurb: "Look at what you grip tightly and what that grip is protecting.",
     tag: "control",
+    accent: "rgba(125,175,255,0.08)",
     chapterTitle: "What you are trying to hold together",
     questions: [
       "What feels out of your control right now?",
@@ -179,6 +183,7 @@ const entryPaths = [
     blurb:
       "For loss, absence, and the things that still ache long after they ended.",
     tag: "grief",
+    accent: "rgba(163,173,200,0.07)",
     chapterTitle: "What is gone but still here",
     questions: [
       "What loss or ending still lives close to the surface for you?",
@@ -196,6 +201,7 @@ const entryPaths = [
     blurb:
       "Examine the roles, labels, and stories shaping who you think you are.",
     tag: "identity",
+    accent: "rgba(188,171,255,0.08)",
     chapterTitle: "Who you became",
     questions: [
       "What role do you feel stuck in right now?",
@@ -213,6 +219,7 @@ const entryPaths = [
     blurb:
       "Notice what your body has been holding before your mind explains it away.",
     tag: "body",
+    accent: "rgba(160,190,255,0.07)",
     chapterTitle: "What your body remembers",
     questions: [
       "Where in your body are you feeling the most tension right now?",
@@ -1066,8 +1073,8 @@ function PathPreview({
       onClick={onClick}
       className="rounded-[28px] border p-5 text-left transition w-full"
       style={{
-        borderColor: selected ? "#efc1d0" : "#3d2a32",
-        backgroundColor: selected ? "#2a1d23" : "#24181d",
+        borderColor: selected ? "#efc1d0" : "rgba(255,255,255,0.08)",
+        backgroundColor: selected ? "#2a1d23" : (path.accent ?? "#24181d"),
       }}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -2785,13 +2792,14 @@ function BookJourney({
               className="text-3xl font-extrabold leading-tight font-display"
               style={{ color: "#fff4f8" }}
             >
-              Where does the story begin, {sharedName}?
+              Whose story are we reading today?
             </h2>
             <p
               className="mt-3 max-w-2xl text-sm leading-7"
               style={{ color: "#d5c4cb" }}
             >
-              Start where you can handle. You can always peel deeper later.
+              Begin where it feels safest. The deeper layers will reveal
+              themselves.
             </p>
           </div>
           <div className="grid gap-4">
@@ -3003,7 +3011,14 @@ function BookJourney({
               {activePath.chapterTitle}
             </div>
           </div>
-          <p className="text-xs" style={{ color: "#6b5560" }}>
+          <p
+            className="text-xs"
+            style={{
+              color: "#8E97AA",
+              letterSpacing: "0.6px",
+              textTransform: "lowercase",
+            }}
+          >
             {`Chapter ${chapterIndex + 1} · ${mirrorHistory.length <= 1 ? "Surface" : mirrorHistory.length <= 3 ? "Pattern" : mirrorHistory.length <= 5 ? "Confrontation" : "Identity"}`}
           </p>
           <div className="flex items-center gap-2">
@@ -4369,21 +4384,110 @@ export default function App() {
         justifyContent: "center",
         padding: "24px",
         background:
-          "linear-gradient(180deg, #120608 0%, #1e0d12 45%, #2a1018 100%)",
+          "linear-gradient(135deg, #0B1020 0%, #12182B 50%, #1A2238 100%)",
       }}
     >
-      {/* Subtle dot pattern overlay */}
-      <div
+      {/* Cosmic star background */}
+      <svg
         style={{
           position: "fixed",
           inset: 0,
+          width: "100%",
+          height: "100%",
           pointerEvents: "none",
           zIndex: 0,
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23ffffff' fill-opacity='0.03'/%3E%3C/svg%3E\")",
-          backgroundRepeat: "repeat",
         }}
-      />
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+        role="presentation"
+      >
+        <line
+          x1="72"
+          y1="128"
+          x2="138"
+          y2="92"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <line
+          x1="138"
+          y1="92"
+          x2="206"
+          y2="178"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <line
+          x1="206"
+          y1="178"
+          x2="298"
+          y2="108"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <line
+          x1="96"
+          y1="520"
+          x2="170"
+          y2="490"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <line
+          x1="170"
+          y1="490"
+          x2="242"
+          y2="560"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <line
+          x1="242"
+          y1="560"
+          x2="320"
+          y2="510"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <line
+          x1="70"
+          y1="650"
+          x2="150"
+          y2="700"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <line
+          x1="150"
+          y1="700"
+          x2="290"
+          y2="690"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+        <circle cx="24" cy="60" r="1.2" fill="rgba(255,255,255,0.7)" />
+        <circle cx="80" cy="130" r="1" fill="rgba(255,255,255,0.45)" />
+        <circle cx="140" cy="90" r="1.4" fill="rgba(255,255,255,0.6)" />
+        <circle cx="210" cy="180" r="1" fill="rgba(255,255,255,0.35)" />
+        <circle cx="300" cy="110" r="1.2" fill="rgba(255,255,255,0.55)" />
+        <circle cx="340" cy="220" r="1" fill="rgba(255,255,255,0.4)" />
+        <circle cx="45" cy="280" r="1.4" fill="rgba(255,255,255,0.5)" />
+        <circle cx="115" cy="340" r="1" fill="rgba(255,255,255,0.35)" />
+        <circle cx="180" cy="310" r="1.2" fill="rgba(255,255,255,0.6)" />
+        <circle cx="255" cy="390" r="1" fill="rgba(255,255,255,0.45)" />
+        <circle cx="330" cy="320" r="1.3" fill="rgba(255,255,255,0.55)" />
+        <circle cx="36" cy="470" r="1" fill="rgba(255,255,255,0.35)" />
+        <circle cx="94" cy="520" r="1.4" fill="rgba(255,255,255,0.6)" />
+        <circle cx="170" cy="490" r="1" fill="rgba(255,255,255,0.45)" />
+        <circle cx="240" cy="560" r="1.2" fill="rgba(255,255,255,0.5)" />
+        <circle cx="320" cy="510" r="1" fill="rgba(255,255,255,0.35)" />
+        <circle cx="70" cy="650" r="1.1" fill="rgba(255,255,255,0.5)" />
+        <circle cx="150" cy="700" r="1.3" fill="rgba(255,255,255,0.6)" />
+        <circle cx="290" cy="690" r="1" fill="rgba(255,255,255,0.4)" />
+        <circle cx="350" cy="760" r="1.2" fill="rgba(255,255,255,0.5)" />
+        <circle cx="100" cy="200" r="110" fill="rgba(184,161,255,0.04)" />
+        <circle cx="320" cy="600" r="120" fill="rgba(125,175,255,0.03)" />
+      </svg>
       {/* Global modals */}
       <AnimatePresence>
         {showCrisisModal && (
