@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Clock,
   Feather,
+  Home,
   MessageSquare,
   Mic,
   PenTool,
@@ -2172,13 +2173,19 @@ function PastEntriesScreen({
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   useEffect(() => {
-    dbGetEntries(actor).then((data) => {
-      setEntries(
-        [...data].sort((a, b) => Number(b.timestamp) - Number(a.timestamp)),
-      );
-      setLoading(false);
-    });
+    dbGetEntries(actor)
+      .then((data) => {
+        setEntries(
+          [...data].sort((a, b) => Number(b.timestamp) - Number(a.timestamp)),
+        );
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+      });
   }, [actor]);
 
   const entryPathLabels: Record<string, string> = {
@@ -2375,6 +2382,100 @@ function PastEntriesScreen({
                   {entry.aiReply}
                 </p>
               )}
+              {entry.conversationTurns &&
+                entry.conversationTurns.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedId(expandedId === entry.id ? null : entry.id)
+                      }
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "#8E97AA",
+                        fontSize: "12px",
+                        padding: "8px 0 0",
+                        display: "block",
+                      }}
+                    >
+                      {expandedId === entry.id
+                        ? "hide ↑"
+                        : "read conversation ↓"}
+                    </button>
+                    {expandedId === entry.id && (
+                      <div style={{ marginTop: "12px" }}>
+                        <hr
+                          style={{
+                            border: "none",
+                            borderTop: "1px solid rgba(255,255,255,0.07)",
+                            marginBottom: "14px",
+                          }}
+                        />
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "10px",
+                          }}
+                        >
+                          {entry.conversationTurns.map(
+                            (
+                              turn: { role: string; text: string },
+                              tIdx: number,
+                            ) => (
+                              <div
+                                key={`turn-${tIdx}-${turn.role}`}
+                                style={{
+                                  display: "flex",
+                                  justifyContent:
+                                    turn.role === "user"
+                                      ? "flex-end"
+                                      : "flex-start",
+                                }}
+                              >
+                                <div style={{ maxWidth: "85%" }}>
+                                  <div
+                                    style={{
+                                      fontSize: "10px",
+                                      color: "#8E97AA",
+                                      marginBottom: "4px",
+                                      textAlign:
+                                        turn.role === "user" ? "right" : "left",
+                                    }}
+                                  >
+                                    {turn.role === "user"
+                                      ? entry.storyName || "you"
+                                      : "Mirror"}
+                                  </div>
+                                  <div
+                                    style={{
+                                      background:
+                                        turn.role === "user"
+                                          ? "rgba(255,255,255,0.06)"
+                                          : "rgba(184,161,255,0.1)",
+                                      color:
+                                        turn.role === "user"
+                                          ? "#F3F5FF"
+                                          : "#D8DEEA",
+                                      borderRadius: "12px",
+                                      padding: "10px 14px",
+                                      fontSize: "14px",
+                                      lineHeight: "1.6",
+                                    }}
+                                  >
+                                    {turn.text}
+                                  </div>
+                                </div>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
             </div>
           ))}
         </div>
@@ -2909,6 +3010,32 @@ function BookJourney({
 
   return (
     <div className="space-y-6">
+      {/* Home button - visible when step >= 3 */}
+      {step >= 3 && (
+        <button
+          type="button"
+          onClick={() => {
+            onSetStep(2);
+            onSetChapterIndex(0);
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            padding: "5px 12px",
+            borderRadius: "999px",
+            fontSize: "12px",
+            fontWeight: 600,
+            background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            color: "rgba(243,245,255,0.7)",
+            cursor: "pointer",
+          }}
+        >
+          <Home className="h-3 w-3" />
+          Home
+        </button>
+      )}
       {/* Step 1: Welcome / Shared name */}
       {step === 1 && (
         <motion.div
@@ -4882,7 +5009,9 @@ export default function App() {
               display: "flex",
               gap: "6px",
               padding: "12px 20px 0",
-              flexWrap: "wrap",
+              overflowX: "auto",
+              flexShrink: 0,
+              WebkitOverflowScrolling: "touch",
             }}
             data-ocid="nav.panel"
           >
@@ -4920,6 +5049,8 @@ export default function App() {
                     screen === target ? "#efc1d0" : "rgba(246,238,248,0.65)",
                   cursor: "pointer",
                   transition: "all 0.2s ease",
+                  flexShrink: 0,
+                  whiteSpace: "nowrap" as const,
                 }}
               >
                 {icon}
