@@ -109,58 +109,117 @@ const crisisKeywords = [
 const entryPaths = [
   {
     id: "surface",
+    key: "surface",
     label: "Surface level",
-    tone: "Light entry point",
-    blurb:
-      "For when you want to ease into reflection without feeling cornered.",
-    tag: "Micro-introspection",
-    chapterTitle: "A quieter chapter",
+    tone: "gentle",
+    blurb: "Start where it feels safest. Peel back one layer at a time.",
+    tag: "surface",
+    chapterTitle: "Where the story begins",
     questions: [
-      "What annoyed you today more than it should have?",
-      "What moment stayed with you after it was over?",
-      "What felt off, but you brushed past it?",
+      "What happened today that is still sitting with you?",
+      "What part of it keeps replaying in your head?",
+      "What about that moment felt bigger than it should have?",
+      "What are you trying to brush off instead of actually feeling?",
+      "If this moment is pointing to something deeper, what is it exposing?",
     ],
   },
   {
     id: "attacked",
+    key: "attacked",
     label: "Ok I feel attacked",
-    tone: "Sharper honesty",
-    blurb:
-      "For when you want the app to call out the pattern instead of dancing around it.",
-    tag: "Shadow work",
-    chapterTitle: "The call-out chapter",
+    tone: "sharp",
+    blurb: "For when something hit a nerve and you know it.",
+    tag: "attacked",
+    chapterTitle: "What got under your skin",
     questions: [
-      "What truth are you avoiding because naming it would force change?",
-      "What are you pretending not to care about?",
-      "What keeps repeating because it feels familiar, not because it feels right?",
+      "What annoyed you today more than it should have?",
+      "Why do you think that hit such a nerve?",
+      "What did that moment make you feel about yourself?",
+      "What old wound does this reaction seem connected to?",
+      "What truth are you resisting because it feels too exposing?",
     ],
   },
   {
     id: "love",
-    label: "Love, distance, and attachment",
-    tone: "Relationship lens",
-    blurb:
-      "For moments shaped by rejection, craving, confusion, or being too invested.",
-    tag: "Attachment patterns",
-    chapterTitle: "The heart chapter",
+    key: "love",
+    label: "Love & attachment",
+    tone: "tender",
+    blurb: "Trace what closeness, distance, and longing are revealing.",
+    tag: "love",
+    chapterTitle: "What your heart is doing",
     questions: [
-      "Do you want to be loved, or do you want to be chosen?",
-      "What are you over-giving to keep?",
-      "Are you reacting to them, or to what they made you feel about yourself?",
+      "Who has been on your mind lately, and why?",
+      "What do you want from them that you are not getting?",
+      "What fear shows up for you when closeness feels uncertain?",
+      "What role do you slip into when you want to be chosen?",
+      "Who are you when you stop chasing, proving, or waiting to be loved back?",
     ],
   },
   {
     id: "control",
-    label: "Control, pressure, and performance",
-    tone: "Protective lens",
-    blurb:
-      "For when your mind won't stop managing, planning, bracing, or carrying everything.",
-    tag: "Fear + identity",
-    chapterTitle: "The grip chapter",
+    key: "control",
+    label: "Control",
+    tone: "intense",
+    blurb: "Look at what you grip tightly and what that grip is protecting.",
+    tag: "control",
+    chapterTitle: "What you are trying to hold together",
     questions: [
-      "What are you trying to control that is actually controlling you?",
-      "What would happen if you loosened your grip?",
-      "Who are you when you are not performing competence?",
+      "What feels out of your control right now?",
+      "What are you doing to try to manage or contain it?",
+      "What feels like it would happen if you let go?",
+      "What does your need for control protect you from feeling?",
+      "If you were not managing everything, who would you be forced to become?",
+    ],
+  },
+  {
+    id: "grief",
+    key: "grief",
+    label: "Grief",
+    tone: "heavy",
+    blurb:
+      "For loss, absence, and the things that still ache long after they ended.",
+    tag: "grief",
+    chapterTitle: "What is gone but still here",
+    questions: [
+      "What loss or ending still lives close to the surface for you?",
+      "What do you miss most: the person, the feeling, or who you were then?",
+      "What part of your grief do you keep hidden from other people?",
+      "What is your grief protecting you from having to accept?",
+      "If you stopped carrying this grief the same way, what would you have to make room for instead?",
+    ],
+  },
+  {
+    id: "identity",
+    key: "identity",
+    label: "Identity",
+    tone: "reflective",
+    blurb:
+      "Examine the roles, labels, and stories shaping who you think you are.",
+    tag: "identity",
+    chapterTitle: "Who you became",
+    questions: [
+      "What role do you feel stuck in right now?",
+      "Who taught you that this is who you have to be?",
+      "What part of your identity feels performed rather than true?",
+      "What do you fear would happen if you stopped being that version of yourself?",
+      "Who are you without the role, the survival strategy, or the story you keep repeating?",
+    ],
+  },
+  {
+    id: "body",
+    key: "body",
+    label: "Body",
+    tone: "somatic",
+    blurb:
+      "Notice what your body has been holding before your mind explains it away.",
+    tag: "body",
+    chapterTitle: "What your body remembers",
+    questions: [
+      "Where in your body are you feeling the most tension right now?",
+      "When does that tension get louder?",
+      "What feeling shows up in your body before you can explain it with words?",
+      "What memory, fear, or pattern does your body seem to be carrying for you?",
+      "If your body could say what it has been holding in silence, what would it finally admit?",
     ],
   },
 ];
@@ -269,32 +328,53 @@ const followupTemplates = {
     "What does it cost you to keep calling it fine?",
   ],
   surface: [
-    "What was the emotion underneath that moment before you moved on?",
-    "Why do you think that specific thing stayed with you and not something else?",
-    "What does that feeling remind you of from before?",
-    "If you had to name the feeling in one word, what would it be?",
-    "What did you want to happen instead?",
+    "What feels most important about that moment?",
+    "What part of it is still unresolved for you?",
+    "Why did that land as strongly as it did?",
+    "What are you avoiding by staying at the surface of this?",
+    "What deeper truth is this moment trying to drag into the light?",
   ],
   attacked: [
-    "What changes the second you stop pretending not to know this?",
-    "What do you gain from keeping this pattern alive?",
-    "Who taught you that this was the way to survive?",
-    "What would you have to give up if this pattern no longer served you?",
-    "What are you most afraid to say out loud about this?",
+    "What exactly felt personal about that?",
+    "What did that reaction expose in you?",
+    "Why did that hit harder than you expected?",
+    "What older feeling got activated underneath the anger?",
+    "What are you defending so hard because it already feels wounded?",
   ],
   love: [
-    "Are you trying to be understood, or are you trying not to be abandoned?",
-    "What are you accepting because being chosen feels better than being alone?",
-    "What does love feel like when it's not something you have to earn?",
-    "What part of you believes you have to work to keep people?",
-    "What are you over-explaining right now?",
+    "What are you hoping for from them?",
+    "What hurts most about this dynamic?",
+    "What does this bring up around closeness or rejection?",
+    "What version of yourself shows up when love feels uncertain?",
+    "What are you still trying to earn instead of simply receive?",
   ],
   control: [
-    "What are you afraid would happen if you were not holding everything together?",
-    "Who are you without the role of being the one who manages it all?",
-    "What would rest actually look like for you right now?",
-    "When did control start feeling like safety?",
-    "What would you let go of if you knew it would still be okay?",
+    "What feels unbearable about not being in charge of this?",
+    "What are you trying to prevent?",
+    "What emotion sits underneath the need to control it?",
+    "What would letting go force you to confront?",
+    "What part of you believes control is the only thing keeping you safe?",
+  ],
+  grief: [
+    "What absence are you still orienting your life around?",
+    "What do you keep revisiting that you have not fully let yourself face?",
+    "What part of this loss still feels unfinished?",
+    "What does holding onto this grief help you avoid accepting?",
+    "Who would you be if this grief stopped defining the shape of your inner world?",
+  ],
+  identity: [
+    "What version of yourself are you tired of maintaining?",
+    "What role feels the hardest to put down?",
+    "What identity was built to survive rather than to express who you are?",
+    "What do you fear people would see if you stopped performing this version of yourself?",
+    "What remains when you strip away everything you became just to cope?",
+  ],
+  body: [
+    "What is your body trying to say before your mind interrupts?",
+    "When do you notice your body tighten, shut down, or brace?",
+    "What feeling lives there even when you try not to name it?",
+    "What has your body been remembering for you that your mind keeps minimizing?",
+    "What truth has been stored in your body because it never felt safe enough to speak?",
   ],
   integration: [
     "What do you know now that you didn't when this chapter started?",
@@ -339,7 +419,13 @@ function generateFollowup(
           ? followupTemplates.love
           : pathId === "control"
             ? followupTemplates.control
-            : followupTemplates.integration;
+            : pathId === "grief"
+              ? followupTemplates.grief
+              : pathId === "identity"
+                ? followupTemplates.identity
+                : pathId === "body"
+                  ? followupTemplates.body
+                  : followupTemplates.integration;
 
   return pathPool[exchangeCount % pathPool.length];
 }
@@ -2917,6 +3003,9 @@ function BookJourney({
               {activePath.chapterTitle}
             </div>
           </div>
+          <p className="text-xs" style={{ color: "#6b5560" }}>
+            {`Chapter ${chapterIndex + 1} · ${mirrorHistory.length <= 1 ? "Surface" : mirrorHistory.length <= 3 ? "Pattern" : mirrorHistory.length <= 5 ? "Confrontation" : "Identity"}`}
+          </p>
           <div className="flex items-center gap-2">
             <div
               className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold"
