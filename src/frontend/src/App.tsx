@@ -21,6 +21,7 @@ import {
   dbGetEntries,
   dbSaveEntry,
   dbSaveFeedback,
+  getUserId,
 } from "./db";
 import { useActor } from "./hooks/useActor";
 import {
@@ -2176,16 +2177,43 @@ function PastEntriesScreen({
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Load from localStorage immediately (sync)
+    const localRaw = localStorage.getItem("mw_local_entries");
+    const localEntries: any[] = localRaw ? JSON.parse(localRaw) : [];
+
+    // Fetch from backend and merge
     dbGetEntries(actor)
       .then((data) => {
-        setEntries(
-          [...data].sort((a, b) => Number(b.timestamp) - Number(a.timestamp)),
+        const backendEntries = [...data].map((e) => ({
+          ...e,
+          timestamp: e.timestamp.toString(),
+        }));
+        const allById = new Map<string, any>();
+        for (const e of localEntries) allById.set(e.id, e);
+        for (const e of backendEntries) allById.set(e.id, e);
+        const merged = Array.from(allById.values()).sort(
+          (a, b) => Number(b.timestamp) - Number(a.timestamp),
         );
+        setEntries(merged);
         setLoading(false);
       })
       .catch(() => {
+        // Backend unavailable — show local entries
+        const sorted = [...localEntries].sort(
+          (a, b) => Number(b.timestamp) - Number(a.timestamp),
+        );
+        setEntries(sorted);
         setLoading(false);
       });
+
+    // Show local entries immediately while backend loads
+    if (localEntries.length > 0) {
+      const sorted = [...localEntries].sort(
+        (a, b) => Number(b.timestamp) - Number(a.timestamp),
+      );
+      setEntries(sorted);
+      setLoading(false);
+    }
   }, [actor]);
 
   const entryPathLabels: Record<string, string> = {
@@ -2210,6 +2238,12 @@ function PastEntriesScreen({
   async function handleDelete(id: string) {
     setDeletingId(id);
     await dbDeleteEntry(actor, id);
+    // Also remove from localStorage
+    const localRaw = localStorage.getItem("mw_local_entries");
+    if (localRaw) {
+      const local = JSON.parse(localRaw).filter((e: any) => e.id !== id);
+      localStorage.setItem("mw_local_entries", JSON.stringify(local));
+    }
     setEntries((prev) => prev.filter((e) => e.id !== id));
     setDeletingId(null);
   }
@@ -3003,6 +3037,40 @@ function BookJourney({
           conversationThread,
           analysis: ma,
         }).catch(() => {});
+      }
+      // Also save to localStorage for resilience across redeployments
+      {
+        const localEntry = {
+          id: crypto.randomUUID(),
+          userId: getUserId(),
+          storyName: sharedName,
+          inputMode: selectedMode ?? "text",
+          entryPoint: selectedPath ?? "",
+          lens: activePath?.label ?? "",
+          rawText: `${allResponses} ${fullResponse}`,
+          aiReply: (() => {
+            const lastPrompt = conversationThread
+              .filter((e) => e.role === "prompt")
+              .slice(-1)[0];
+            return lastPrompt?.text ?? "";
+          })(),
+          conversationTurns: conversationThread,
+          emotions: ma.emotions || [],
+          triggers: ma.triggers || [],
+          beliefs: ma.beliefs || [],
+          coping: ma.coping || [],
+          primaryWound: ma.primaryWound ?? "",
+          secondaryWound: ma.secondaryWound ?? null,
+          mirrorMode: ma.mirrorMode ?? "",
+          loopInterruption: ma.loopInterruption ?? "",
+          confidence: "low",
+          timestamp: Date.now().toString(),
+        };
+        const existing = JSON.parse(
+          localStorage.getItem("mw_local_entries") || "[]",
+        );
+        const updated = [localEntry, ...existing].slice(0, 100);
+        localStorage.setItem("mw_local_entries", JSON.stringify(updated));
       }
       onSetStep(5);
     }
